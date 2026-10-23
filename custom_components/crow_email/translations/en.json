@@ -1,0 +1,248 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Crow Email",
+        "description": "Adds the Crow Email card to your dashboards. Each person then adds their own email accounts in the card."
+      }
+    },
+    "abort": {
+      "single_instance_allowed": "Crow Email is already set up."
+    }
+  },
+  "entity": {
+    "sensor": {
+      "unread": {
+        "name": "Unread"
+      },
+      "unread_vip": {
+        "name": "Unread VIP"
+      },
+      "latest": {
+        "name": "Latest email"
+      },
+      "received_today": {
+        "name": "Received today"
+      },
+      "flagged": {
+        "name": "Flagged"
+      },
+      "drafts_scheduled": {
+        "name": "Drafts and scheduled"
+      },
+      "storage": {
+        "name": "Mailbox usage"
+      },
+      "last_checked": {
+        "name": "Last checked"
+      },
+      "parcels": {
+        "name": "Parcels"
+      },
+      "junk": {
+        "name": "Junk"
+      },
+      "badge": {
+        "name": "App badge"
+      },
+      "attention_today": {
+        "name": "Needs attention today"
+      },
+      "bills_due": {
+        "name": "Bills due this week"
+      }
+    },
+    "binary_sensor": {
+      "connected": {
+        "name": "Connected"
+      },
+      "new_mail": {
+        "name": "New mail"
+      }
+    }
+  },
+  "services": {
+    "send_email": {
+      "name": "Send email",
+      "description": "Sends an email from one of the Crow Email accounts.",
+      "fields": {
+        "account": {
+          "name": "From account",
+          "description": "The account to send from: its email address or its name in Crow Email."
+        },
+        "to": {
+          "name": "To",
+          "description": "Who to send to. Separate several addresses with commas."
+        },
+        "cc": {
+          "name": "Cc",
+          "description": "Copied to."
+        },
+        "bcc": {
+          "name": "Bcc",
+          "description": "Copied to, without the others seeing."
+        },
+        "subject": {
+          "name": "Subject",
+          "description": "The subject line."
+        },
+        "message": {
+          "name": "Message",
+          "description": "The email, as plain text. The account's signature is added."
+        },
+        "html": {
+          "name": "HTML",
+          "description": "The email as HTML instead of plain text (no signature is added)."
+        },
+        "attachments": {
+          "name": "Attachments",
+          "description": "Files to attach, from /config/www (/local/...), /media (/media/local/...) or another allowed folder."
+        },
+        "send_at": {
+          "name": "Send at",
+          "description": "Send it later, at this time, instead of straight away."
+        },
+        "buttons": {
+          "name": "Buttons",
+          "description": "Buttons in the email, each with a title and an action (and optionally a colour). Tapping one fires a crow_email_action event with that action, once. Each button works for two weeks."
+        },
+        "poll": {
+          "name": "Voting buttons",
+          "description": "Two to eight choices. People vote by tapping one and sending the reply that opens; each vote fires a crow_email_vote event."
+        },
+        "read_receipt": {
+          "name": "Ask for a read receipt",
+          "description": "Asks the person's mail app to send a receipt when they open the email (they can choose not to)."
+        }
+      }
+    },
+    "mark_as_read": {
+      "name": "Mark as read",
+      "description": "Marks an email as read (or unread).",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "The account's email address (or its name in Crow Email)."
+        },
+        "folder": {
+          "name": "Folder",
+          "description": "The folder the email is in. INBOX unless you say otherwise."
+        },
+        "uid": {
+          "name": "Email",
+          "description": "The email's uid, from the crow_email_received event (trigger.event.data.uid)."
+        },
+        "message_id": {
+          "name": "Message-ID",
+          "description": "Or find the email by its Message-ID header."
+        },
+        "read": {
+          "name": "Read",
+          "description": "Off marks it as unread."
+        },
+        "all": {
+          "name": "Every email",
+          "description": "Mark every email in the folder."
+        }
+      }
+    },
+    "archive": {
+      "name": "Archive",
+      "description": "Moves an email to the account's Archive folder.",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "The account's email address (or its name in Crow Email)."
+        },
+        "folder": {
+          "name": "Folder",
+          "description": "The folder the email is in. INBOX unless you say otherwise."
+        },
+        "uid": {
+          "name": "Email",
+          "description": "The email's uid, from the crow_email_received event (trigger.event.data.uid)."
+        },
+        "message_id": {
+          "name": "Message-ID",
+          "description": "Or find the email by its Message-ID header."
+        }
+      }
+    },
+    "move_to_folder": {
+      "name": "Move to folder",
+      "description": "Moves an email to another folder.",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "The account's email address (or its name in Crow Email)."
+        },
+        "folder": {
+          "name": "Folder",
+          "description": "The folder the email is in. INBOX unless you say otherwise."
+        },
+        "uid": {
+          "name": "Email",
+          "description": "The email's uid, from the crow_email_received event (trigger.event.data.uid)."
+        },
+        "message_id": {
+          "name": "Message-ID",
+          "description": "Or find the email by its Message-ID header."
+        },
+        "to_folder": {
+          "name": "To folder",
+          "description": "The folder to move it to, by name."
+        }
+      }
+    },
+    "flag": {
+      "name": "Flag",
+      "description": "Flags an email (or removes the flag).",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "The account's email address (or its name in Crow Email)."
+        },
+        "folder": {
+          "name": "Folder",
+          "description": "The folder the email is in. INBOX unless you say otherwise."
+        },
+        "uid": {
+          "name": "Email",
+          "description": "The email's uid, from the crow_email_received event (trigger.event.data.uid)."
+        },
+        "message_id": {
+          "name": "Message-ID",
+          "description": "Or find the email by its Message-ID header."
+        },
+        "flagged": {
+          "name": "Flagged",
+          "description": "Off removes the flag."
+        }
+      }
+    },
+    "refresh": {
+      "name": "Check for new mail",
+      "description": "Checks for new mail now and updates the sensors.",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "Just this account. Leave empty for all of them."
+        }
+      }
+    },
+    "update_badge": {
+      "name": "Update app badge",
+      "description": "Brings the red number on the Home Assistant app's icon up to date for the person who owns an account, optionally adding a number of your own (for example parcels on their way). Needs App Icon Badge turned on in the card editor.",
+      "fields": {
+        "account": {
+          "name": "Account",
+          "description": "Any of the person's email accounts, by email address or description."
+        },
+        "extra": {
+          "name": "Extra",
+          "description": "A number added to the badge, kept until you change it. Use 0 to stop adding one."
+        }
+      }
+    }
+  }
+}

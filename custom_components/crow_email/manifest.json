@@ -1,0 +1,25 @@
+{
+  "domain": "crow_email",
+  "name": "Crow Email",
+  "after_dependencies": [
+    "mobile_app",
+    "lovelace",
+    "ai_task"
+  ],
+  "codeowners": [
+    "@jamesmcginnis"
+  ],
+  "config_flow": true,
+  "dependencies": [
+    "frontend",
+    "http",
+    "websocket_api"
+  ],
+  "documentation": "https://github.com/jamesmcginnis/crow-email",
+  "integration_type": "service",
+  "iot_class": "cloud_push",
+  "issue_tracker": "https://github.com/jamesmcginnis/crow-email/issues",
+  "requirements": [],
+  "single_config_entry": true,
+  "version": "0.0.73"
+}
