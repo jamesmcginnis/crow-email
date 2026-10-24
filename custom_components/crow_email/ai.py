@@ -25,11 +25,18 @@ _LOGGER = logging.getLogger(__name__)
 AI_TIMEOUT = 90
 FEATURES = ("summary", "replies", "writing", "translate", "actions", "ask", "thread", "search", "attachments",
             "tone", "scam", "describe", "assist", "notify", "automation", "parcels", "categories", "followup", "rules",
-            "smart_snooze", "screener_notes", "sub_notes", "tidy", "chaser", "signatures", "appointments", "bills", "briefing")
+            "smart_snooze", "screener_notes", "sub_notes", "tidy", "chaser", "signatures", "appointments", "bills", "briefing",
+            "food", "groceries", "travel", "returns", "renewals", "visits", "tickets", "council", "receipts")
 # the features that read new mail as it arrives
-BACKGROUND = ("notify", "automation", "parcels", "categories", "rules", "appointments", "bills")
+BACKGROUND = ("notify", "automation", "parcels", "categories", "rules", "appointments", "bills", "food", "groceries",
+              "travel", "returns", "renewals", "visits", "tickets", "council", "receipts")
+FIND_KINDS = ("travel", "returns", "renewals", "visits", "tickets", "council", "receipts")
 CATEGORIES = ("primary", "transactions", "updates", "promotions")
 PARCEL_STATUSES = ("ordered", "dispatched", "in_transit", "out_for_delivery", "delivered", "problem")
+FOOD_STATUSES = ("ordered", "preparing", "on_its_way", "ready", "delivered", "collected", "cancelled")
+GROCERY_STATUSES = ("booked", "picking", "on_its_way", "ready", "delivered", "collected", "cancelled")
+GROCERY_SHOPS = ("Tesco, Sainsbury's, Asda, Morrisons, Ocado, Waitrose, Iceland, Aldi, Lidl, Co-op, M&S, "
+                 "Amazon Fresh, Getir, Gopuff or a local grocer")
 MAX_EMAIL_CHARS = 12000
 
 REWRITE_STYLES = {
@@ -290,7 +297,7 @@ async def find_actions(hass: HomeAssistant, mailer: Mailer, msg: dict) -> list[d
 
 # ── reading new mail as it arrives ─────────────────────────────────────────
 async def analyse(hass: HomeAssistant, mailer: Mailer, msg: dict, want: set[str]) -> dict:
-    """One look at a new email for Smart Notifications, Smart Categories, Email Details and Parcels."""
+    """One look at a new email for Smart Notifications, Smart Categories, Email Details, Parcels, Food Orders and Supermarket Deliveries."""
     feature = next(f for f in BACKGROUND if f in want)
     asks = ['"category": "primary" (from a person, or something the reader personally needs to act on), '
             '"transactions" (receipts, orders, bills, bookings, deliveries, bank), "updates" (account notices, '
@@ -306,18 +313,42 @@ async def analyse(hass: HomeAssistant, mailer: Mailer, msg: dict, want: set[str]
                  '"when": the date and time of an appointment, event or booking as "YYYY-MM-DDTHH:MM" (or "YYYY-MM-DD"), or ""',
                  '"location": where, or ""', '"reference": an order, booking or account reference, or ""']
     if "appointments" in want:
+        not_appt = "".join((" Not travel (flights, trains, hotels, car hire)." if "travel" in want else "",
+                            " Not a ticketed event like a concert, match or show." if "tickets" in want else "",
+                            " Not someone coming to the reader's home." if "visits" in want else ""))
         asks.append('"appointment": null unless the email confirms, arranges or reminds about an appointment, booking, '
-                    'reservation or event the reader will go to, otherwise {"title": "a short name like Dentist or Table for 4 at Luigi\'s", '
+                    'reservation or event the reader will go to.' + not_appt + ' Otherwise {"title": "a short name like Dentist or Table for 4 at Luigi\'s", '
                     '"start": "YYYY-MM-DDTHH:MM" or "YYYY-MM-DD", "end": the same or "", "location": "where, or \'\'"}')
     if "bills" in want:
         asks.append('"bill": null unless the email asks the reader to pay something (a bill, invoice or statement with an amount due; '
                     'not a receipt for something already paid), otherwise {"payee": "who it\'s from", "amount": a number, '
                     '"currency": "e.g. GBP", "due": "YYYY-MM-DD" or "", "reference": "an account or invoice number, or \'\'"}')
     if "parcels" in want:
-        asks.append('"parcel": null unless the email is about something being sent to the reader, otherwise '
+        not_these = "".join((" Not a takeaway or restaurant food order." if "food" in want else "",
+                             " Not a supermarket or grocery delivery or click and collect." if "groceries" in want else "",
+                             " Not something the reader is sending back (a return)." if "returns" in want else ""))
+        asks.append('"parcel": null unless the email is about something being sent to the reader.' + not_these + ' Otherwise '
                     '{"item": "what it is, in a few words", "retailer": "", "courier": "", "status": one of '
                     + ", ".join(f'"{x}"' for x in PARCEL_STATUSES) +
                     ', "expected": "YYYY-MM-DD" or "", "tracking": "tracking number" or "", "tracking_url": "" }')
+    if "food" in want:
+        asks.append('"food": null unless the email is about a takeaway or restaurant food order the reader placed (Just Eat, '
+                    'Deliveroo, Uber Eats, Foodhub, Domino\'s, or a restaurant\'s own site), not groceries and not a table booking. '
+                    'Otherwise {"restaurant": "", "service": "the app or site it was ordered through, or \'\'", "status": one of '
+                    + ", ".join(f'"{x}"' for x in FOOD_STATUSES) +
+                    ' (ordered: order placed or accepted, preparing: being cooked, on_its_way: with the driver, ready: ready to collect), '
+                    '"method": "delivery" or "collection", "arrive": when it should arrive or be ready as "YYYY-MM-DDTHH:MM", or "", '
+                    '"total": the amount paid as a number or null, "currency": e.g. "GBP" or "", "order_number": "" }')
+    if "groceries" in want:
+        asks.append('"grocery": null unless the email is about a supermarket or grocery order for delivery or click and collect (' + GROCERY_SHOPS
+                    + '), not a takeaway and not a single item posted like a parcel. Otherwise {"shop": "", "status": one of '
+                    + ", ".join(f'"{x}"' for x in GROCERY_STATUSES) +
+                    ' (booked: order placed or slot booked, picking: being packed, on_its_way: with the driver, ready: ready to collect), '
+                    '"method": "delivery" or "collection", "slot_start": "YYYY-MM-DDTHH:MM" or "", "slot_end": "YYYY-MM-DDTHH:MM" or "", '
+                    '"edit_by": the last time the order can be changed as "YYYY-MM-DDTHH:MM", or "", "total": a number or null, '
+                    '"currency": e.g. "GBP" or "", "order_number": "", "substitutions": up to 10 short lines like '
+                    '"Whole milk 2L instead of Semi-skimmed milk 2L", "missing": up to 10 items that weren\'t available }')
+    asks += find_asks(want)
     text = await _task(hass, mailer, feature, "Crow Email new email",
         _now(hass) + " Read this new email and answer only with JSON with these keys:\n- " + "\n- ".join(asks) + "\n"
         + GUARD + "\n" + _email_block(msg)[:7000])
@@ -362,7 +393,169 @@ async def analyse(hass: HomeAssistant, mailer: Mailer, msg: dict, want: set[str]
             "expected": _date(p.get("expected")), "tracking": re.sub(r"\s+", "", str(p.get("tracking") or ""))[:60],
             "tracking_url": str(p.get("tracking_url") or "")[:500] if str(p.get("tracking_url") or "").startswith("https://") else "",
         }
+    out.update(read_finds(data, want))
+    fd = data.get("food")
+    if "food" in want and isinstance(fd, dict) and (fd.get("restaurant") or fd.get("service")):
+        out["food"] = {
+            "restaurant": _clean(str(fd.get("restaurant") or fd.get("service") or ""))[:80],
+            "service": _clean(str(fd.get("service") or ""))[:60],
+            "status": fd.get("status") if fd.get("status") in FOOD_STATUSES else "ordered",
+            "method": "collection" if str(fd.get("method") or "").lower() == "collection" else "delivery",
+            "arrive": _date(fd.get("arrive"), True) if len(_date(fd.get("arrive"), True)) > 10 else "",
+            "total": _amount(fd.get("total")), "currency": str(fd.get("currency") or "")[:8].upper(),
+            "order_number": _clean(str(fd.get("order_number") or ""))[:40],
+        }
+    gr = data.get("grocery")
+    if "groceries" in want and isinstance(gr, dict) and gr.get("shop"):
+        def lines(v: Any) -> list[str]:
+            return [_clean(str(x))[:120] for x in v[:10] if str(x).strip()] if isinstance(v, list) else []
+        out["grocery"] = {
+            "shop": _clean(str(gr["shop"]))[:60],
+            "status": gr.get("status") if gr.get("status") in GROCERY_STATUSES else "booked",
+            "method": "collection" if str(gr.get("method") or "").lower() == "collection" else "delivery",
+            "slot_start": _date(gr.get("slot_start"), True), "slot_end": _date(gr.get("slot_end"), True),
+            "edit_by": _date(gr.get("edit_by"), True),
+            "total": _amount(gr.get("total")), "currency": str(gr.get("currency") or "")[:8].upper(),
+            "order_number": _clean(str(gr.get("order_number") or ""))[:40],
+            "substitutions": lines(gr.get("substitutions")), "missing": lines(gr.get("missing")),
+        }
     return out
+
+
+# ── Travel, Returns, Renewals, Home Visits, Tickets, Council and Receipts ──
+DT = '"YYYY-MM-DDTHH:MM" (or "YYYY-MM-DD" with no time), or ""'
+
+
+def find_asks(want: set[str]) -> list[str]:
+    asks = []
+    if "travel" in want:
+        asks.append('"travel": null unless the email confirms, changes, delays, cancels or reminds about one of the reader\'s own '
+                    'flights, trains, coaches, ferries, hotel stays or car hire. Otherwise (one booking: the next or main one) '
+                    '{"type": one of "flight", "train", "hotel", "car", "ferry", "coach", "other", "title": "a short name like '
+                    'Flight to Malaga or Hotel in Paris", "provider": "airline, train company or hotel", "number": "flight or train '
+                    'number, or \'\'", "from": "where from, or \'\'", "to": "where to (a hotel: the town), or \'\'", "start": departure '
+                    'or check-in as ' + DT + ', "end": arrival or check-out as ' + DT + ', "terminal": "", "gate": "", "seat": "", '
+                    '"reference": "booking reference", "status": one of "booked", "changed", "delayed", "cancelled", '
+                    '"delay_minutes": a number or null, "checkin_opens": when online check-in opens as ' + DT + ', "trip": "the '
+                    'destination of the whole trip, or \'\'"}')
+    if "returns" in want:
+        asks.append('"return": null unless the email is about something the reader is sending back to a shop, or a refund for it. '
+                    'Otherwise {"shop": "", "item": "what, in a few words", "status": one of "started", "label_ready", "sent", '
+                    '"received", "refunded", "rejected", "return_by": the last day to send it back as "YYYY-MM-DD" or "", "method": '
+                    '"drop_off", "collection", "post" or "", "refund_amount": a number or null, "currency": e.g. "GBP" or "", '
+                    '"reference": ""}')
+    if "renewals" in want:
+        asks.append('"renewal": null unless the email is about something of the reader\'s that renews, expires or needs renewing '
+                    '(insurance, MOT, TV licence, breakdown cover, passport, driving licence, domain, phone or broadband contract, '
+                    'a paid subscription or membership). Not an ordinary monthly bill. Otherwise {"what": "a short name like Car '
+                    'insurance or MOT", "provider": "", "renews": the renewal or expiry date as "YYYY-MM-DD" or "", "price": the new '
+                    'price as a number or null, "previous_price": last time\'s as a number or null, "currency": "", "auto_renew": '
+                    'true, false or null, "reference": "a policy or account number, or \'\'", "status": one of "upcoming", "renewed", '
+                    '"cancelled"}')
+    if "visits" in want:
+        asks.append('"visit": null unless someone is coming to the reader\'s home: an engineer, a repair or installation, a '
+                    'service (like a boiler), a surveyor or a large delivery with a time window. Otherwise {"what": "a short name '
+                    'like Boiler service or Broadband install", "company": "", "start": the start of the window as ' + DT + ', '
+                    '"end": the end of the window as ' + DT + ', "status": one of "booked", "changed", "on_the_way", "done", '
+                    '"cancelled", "reference": ""}')
+    if "tickets" in want:
+        asks.append('"ticket": null unless the email is tickets, or a booking, for an event the reader is going to (concert, '
+                    'match, theatre, cinema, festival, show, exhibition). Otherwise {"event": "", "venue": "", "start": when it '
+                    'starts as ' + DT + ', "doors": when doors open as ' + DT + ', "seats": "seat or standing details, or \'\'", '
+                    '"quantity": number of tickets or null, "reference": "", "status": one of "booked", "changed", "cancelled"}')
+    if "council" in want:
+        asks.append('"council": null unless the email is from a council, school, local authority or government service about '
+                    'the reader\'s home or area (bin collections, council tax, school news or closures, road works, consultations). '
+                    'Otherwise {"topic": one of "bins", "council_tax", "school", "roads", "consultation", "other", "title": "a short '
+                    'title", "date": the date it\'s about as "YYYY-MM-DD" or "", "action_by": a deadline for the reader as '
+                    '"YYYY-MM-DD" or "", "detail": "one short sentence", "organisation": ""}')
+    if "receipts" in want:
+        asks.append('"receipt": null unless the email is a receipt or order confirmation for something worth keeping the receipt '
+                    'for: electronics, appliances, furniture, tools, or anything over 50 in the currency or with a warranty. Not '
+                    'food, groceries, tickets, travel or subscriptions. Otherwise {"shop": "", "item": "what, in a few words", '
+                    '"price": a number or null, "currency": "", "purchased": "YYYY-MM-DD" or "", "warranty_until": when the warranty '
+                    'ends as "YYYY-MM-DD" or "", "reference": "order number, or \'\'"}')
+    return asks
+
+
+def read_finds(data: dict, want: set[str]) -> dict:
+    """What the AI found for Travel, Returns, Renewals, Home Visits, Tickets, Council and Receipts, checked and tidied."""
+    out: dict[str, dict] = {}
+
+    def s(v: Any, n: int = 80) -> str:
+        return _clean(str(v or ""))[:n]
+
+    def one(v: Any, choices: tuple, default: str) -> str:
+        return v if v in choices else default
+
+    def dt(v: Any) -> str:
+        return _date(v, True)
+
+    x = data.get("travel")
+    if "travel" in want and isinstance(x, dict) and (x.get("title") or x.get("provider") or x.get("number")):
+        try:
+            delay = int(x["delay_minutes"]) if x.get("delay_minutes") not in (None, "") else None
+        except (TypeError, ValueError):
+            delay = None
+        kind = {"plane": "flight", "air": "flight", "rail": "train", "accommodation": "hotel", "stay": "hotel", "car hire": "car",
+                "boat": "ferry", "bus": "coach"}.get(str(x.get("type") or "").lower(), str(x.get("type") or "").lower())
+        out["travel"] = {"type": one(kind, ("flight", "train", "hotel", "car", "ferry", "coach", "other"), "other"),
+                         "title": s(x.get("title") or x.get("provider"), 100), "provider": s(x.get("provider"), 60),
+                         "number": s(x.get("number"), 20), "from": s(x.get("from"), 60), "to": s(x.get("to"), 60),
+                         "start": dt(x.get("start")), "end": dt(x.get("end")), "terminal": s(x.get("terminal"), 20),
+                         "gate": s(x.get("gate"), 12), "seat": s(x.get("seat"), 30), "reference": s(x.get("reference"), 30),
+                         "status": one(x.get("status"), ("booked", "changed", "delayed", "cancelled"), "booked"),
+                         "delay_minutes": delay, "checkin_opens": dt(x.get("checkin_opens")), "trip": s(x.get("trip"), 60)}
+    x = data.get("return")
+    if "returns" in want and isinstance(x, dict) and (x.get("item") or x.get("shop")):
+        out["returns"] = {"shop": s(x.get("shop"), 60), "item": s(x.get("item") or x.get("shop"), 100),
+                          "status": one(x.get("status"), ("started", "label_ready", "sent", "received", "refunded", "rejected"), "started"),
+                          "return_by": _date(x.get("return_by")), "method": one(x.get("method"), ("drop_off", "collection", "post"), ""),
+                          "refund_amount": _amount(x.get("refund_amount")), "currency": str(x.get("currency") or "")[:8].upper(),
+                          "reference": s(x.get("reference"), 40)}
+    x = data.get("renewal")
+    if "renewals" in want and isinstance(x, dict) and x.get("what"):
+        out["renewals"] = {"what": s(x["what"], 60), "provider": s(x.get("provider"), 60), "renews": _date(x.get("renews")),
+                           "price": _amount(x.get("price")), "previous_price": _amount(x.get("previous_price")),
+                           "currency": str(x.get("currency") or "")[:8].upper(),
+                           "auto_renew": x["auto_renew"] if isinstance(x.get("auto_renew"), bool)
+                           else {"yes": True, "true": True, "no": False, "false": False}.get(str(x.get("auto_renew") or "").lower()),
+                           "reference": s(x.get("reference"), 40),
+                           "status": one(x.get("status"), ("upcoming", "renewed", "cancelled"), "upcoming")}
+    x = data.get("visit")
+    if "visits" in want and isinstance(x, dict) and (x.get("what") or x.get("company")):
+        out["visits"] = {"what": s(x.get("what") or x.get("company"), 60), "company": s(x.get("company"), 60),
+                         "start": dt(x.get("start")), "end": dt(x.get("end")),
+                         "status": one(x.get("status"), ("booked", "changed", "on_the_way", "done", "cancelled"), "booked"),
+                         "reference": s(x.get("reference"), 40)}
+    x = data.get("ticket")
+    if "tickets" in want and isinstance(x, dict) and x.get("event"):
+        try:
+            qty = int(x["quantity"]) if x.get("quantity") not in (None, "") else None
+        except (TypeError, ValueError):
+            qty = None
+        out["tickets"] = {"event": s(x["event"], 100), "venue": s(x.get("venue"), 80), "start": dt(x.get("start")),
+                          "doors": dt(x.get("doors")), "seats": s(x.get("seats"), 80), "quantity": qty,
+                          "reference": s(x.get("reference"), 40),
+                          "status": one(x.get("status"), ("booked", "changed", "cancelled"), "booked")}
+    x = data.get("council")
+    if "council" in want and isinstance(x, dict) and x.get("title"):
+        out["council"] = {"topic": one(x.get("topic"), ("bins", "council_tax", "school", "roads", "consultation", "other"), "other"),
+                          "title": s(x["title"], 100), "date": _date(x.get("date")), "action_by": _date(x.get("action_by")),
+                          "detail": s(x.get("detail"), 200), "organisation": s(x.get("organisation"), 80)}
+    x = data.get("receipt")
+    if "receipts" in want and isinstance(x, dict) and x.get("item"):
+        out["receipts"] = {"shop": s(x.get("shop"), 60), "item": s(x["item"], 100), "price": _amount(x.get("price")),
+                           "currency": str(x.get("currency") or "")[:8].upper(), "purchased": _date(x.get("purchased")),
+                           "warranty_until": _date(x.get("warranty_until")), "reference": s(x.get("reference"), 40)}
+    return {"finds": out} if out else {}
+
+
+def _amount(v: Any) -> float | None:
+    try:
+        return round(float(str(v).replace(",", "").lstrip("£$€")), 2) if v not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 def _date(v: Any, with_time: bool = False) -> str:

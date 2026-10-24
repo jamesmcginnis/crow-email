@@ -14,6 +14,8 @@ EVENT_RULE_MATCHED = f"{DOMAIN}_rule_matched"
 EVENT_DETAILS = f"{DOMAIN}_details"          # what the AI found in a new email (bills, deliveries, appointments…)
 EVENT_FOLLOW_UP = f"{DOMAIN}_follow_up"      # a sent email that may need a follow-up
 EVENT_PARCEL = f"{DOMAIN}_parcel"            # a parcel was added or its status changed
+EVENT_FOOD = f"{DOMAIN}_food"                # a food order was added or its status changed
+EVENT_GROCERY = f"{DOMAIN}_grocery"          # a supermarket delivery was added or its status changed
 EVENT_BLOCKED = f"{DOMAIN}_blocked"          # email from a blocked sender was moved to Junk
 
 # Signal sent (through the dispatcher) when an account's numbers change, so its sensors update
@@ -33,6 +35,8 @@ COUNTS_SECONDS = 300            # unread / flagged / drafts / storage refresh
 CONNECT_TIMEOUT = 30
 MAX_SEARCH_RESULTS = 200
 MAX_VIPS = 200
+UNREAD_GROUP_MAX = 1000   # newest unread emails sorted into groups (People, Shopping...) for the sensors
+SUBSCRIPTIONS_EVERY = 6 * 3600   # seconds between counting mailing lists for the Subscriptions sensor
 MAX_RULES = 50
 MAX_ACCOUNTS_PER_USER = 10
 
@@ -104,7 +108,9 @@ DEFAULT_SETTINGS = {
                      "categories": False, "followup": False, "rules": False,
                      # the newer ones: all on as soon as AI Features is turned on
                      "smart_snooze": True, "screener_notes": True, "sub_notes": True, "tidy": True, "chaser": True,
-                     "signatures": True, "appointments": True, "bills": True, "briefing": True},
+                     "signatures": True, "appointments": True, "bills": True, "briefing": True,
+                     "food": True, "groceries": True, "travel": True, "returns": True, "renewals": True, "visits": True,
+                     "tickets": True, "council": True, "receipts": True},
     },
 }
 

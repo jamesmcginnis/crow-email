@@ -64,7 +64,7 @@ class Smart:
     # ── new mail ───────────────────────────────────────────────────────────
     def wants(self, a: Account) -> set[str]:
         """Which of the new-mail features apply to this account right now."""
-        want = {f for f in ("automation", "parcels", "categories", "appointments", "bills") if self.on(f)}
+        want = {f for f in ("automation", "parcels", "categories", "appointments", "bills", "food", "groceries", *ai.FIND_KINDS) if self.on(f)}
         if a.acc.get("notify") == "smart" and self.on("notify"):
             want.add("notify")
         if not want:
@@ -123,6 +123,9 @@ class Smart:
                 "when": res.get("when", ""), "location": res.get("location", "") if share else "",
                 "reference": res.get("reference", "") if share else "",
                 "parcel": res.get("parcel") if share else ({"status": res["parcel"]["status"], "expected": res["parcel"]["expected"]} if res.get("parcel") else None),
+                "food": res.get("food") if share else ({"status": res["food"]["status"], "arrive": res["food"]["arrive"]} if res.get("food") else None),
+                "grocery": res.get("grocery") if share else ({"status": res["grocery"]["status"], "slot_start": res["grocery"]["slot_start"],
+                                                              "slot_end": res["grocery"]["slot_end"]} if res.get("grocery") else None),
             })
         if "parcels" in want and res.get("parcel"):
             self.add_parcel(a, it, res["parcel"])
@@ -130,6 +133,13 @@ class Smart:
             self.mailer.aix.add_appointment(a, it, res["appointment"])
         if "bills" in want and res.get("bill"):
             self.mailer.aix.add_bill(a, it, res["bill"])
+        if "food" in want and res.get("food"):
+            self.mailer.orders.add(a, it, "food", res["food"])
+        if "groceries" in want and res.get("grocery"):
+            self.mailer.orders.add(a, it, "groceries", res["grocery"])
+        for kind, found in (res.get("finds") or {}).items():
+            if kind in want:
+                self.mailer.finds.add(a, it, kind, found)
 
     # ── Smart Categories ───────────────────────────────────────────────────
     def remember_categories(self, account_id: str, cats: dict[int, str]) -> None:
@@ -413,6 +423,7 @@ class Smart:
                     lst.remove(n)
         self.mailer.save()
         self.mailer.send_to(uid, {"type": "nudges", "nudges": self.nudges_for(uid)})
+        a.publish()   # the Waiting for a reply sensor
         return self.nudges_for(uid)
 
     def replied_by(self, a: Account, email_addr: str) -> None:
@@ -426,9 +437,18 @@ class Smart:
             self.data["nudges"][a.id] = keep
             self.mailer.save()
             self.mailer.send_to(a.acc["owner"], {"type": "nudges", "nudges": self.nudges_for(a.acc["owner"])})
+            a.publish()
 
     def tick(self) -> None:
         self.tidy_all()
+        try:
+            self.mailer.orders.tidy_all()
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Crow Email: tidying food orders and supermarket deliveries failed")
+        try:
+            self.mailer.finds.tidy_all()
+        except Exception:  # noqa: BLE001
+            _LOGGER.exception("Crow Email: tidying travel, returns, renewals and the rest failed")
         if not self.on("followup"):
             return
         for a in list(self.mailer.accounts.values()):
@@ -511,6 +531,7 @@ class Smart:
         lst[:] = [n for n in lst if n.get("date", 0) >= cutoff]
         self.mailer.save()
         self.mailer.send_to(a.acc["owner"], {"type": "nudges", "nudges": self.nudges_for(a.acc["owner"])})
+        a.publish()
 
     # ── Smart Search ───────────────────────────────────────────────────────
     async def async_search(self, uid: str, query: str, account_id: str | None) -> dict:

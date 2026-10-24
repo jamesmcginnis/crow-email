@@ -32,6 +32,7 @@ from . import microsoft
 from .const import (
     COUNTS_SECONDS, DEFAULT_SETTINGS, DOMAIN, EVENT_RECEIVED, EVENT_RULE_MATCHED, EVENT_SENT,
     IDLE_RENEW_SECONDS, MAX_ACCOUNTS_PER_USER, MAX_SEARCH_RESULTS, MAX_VIPS,
+    UNREAD_GROUP_MAX,
     NOTIFY_ACTION_PREFIX, NOTIFY_CHOICES, PAGE_SIZE, PROVIDERS, SEND_LATER_GRACE,
     SIGNAL_ACCOUNT_UPDATED, SIGNAL_ACCOUNTS_CHANGED, STORAGE_KEY, STORAGE_VERSION,
 )
@@ -135,8 +136,13 @@ class Account:
         self.stats: dict[str, Any] = {
             "connected": False, "error": "", "last_sync": None, "unread": None, "unread_vip": None,
             "flagged": None, "drafts": None, "received_today": None, "storage": None, "latest": None,
-            "new_mail": False,
+            "new_mail": False, "latest_vip": None, "unread_groups": None, "screener": None,
         }
+        self.kind_cache: dict[int, str] = {}       # Inbox UID -> group (People, Notifications...), for unread by group
+        self.kind_validity: Any = None
+        self.vip_looked = False                    # looked for the newest VIP email since starting (or the VIPs changed)
+        self.screener_seen: tuple = ()             # the Screener's emails last time, so its senders are only read again on a change
+        self.screener_senders: list[dict] = []
 
     # the password, or a Microsoft access token (refreshed when needed, from any thread)
     def _secret(self) -> str:
@@ -602,6 +608,8 @@ class Account:
             if gone:
                 try:
                     self.mailer.smart.drop_parcels(self, path, gone)   # parcels from those emails go too
+                    self.mailer.orders.drop(self, path, gone)
+                    self.mailer.finds.drop(self, path, gone)
                 except Exception:  # noqa: BLE001
                     _LOGGER.exception("Crow Email: couldn't tidy parcels after emptying %s", path)
             self._send_emptying(st)
@@ -646,6 +654,11 @@ class Account:
             fresh = [i for i in fresh if not i.get("blocked") and not i.get("screened")]
             if fresh:
                 self.stats["latest"] = self._latest(fresh[-1])
+                owner = self.acc["owner"]
+                vips = [i for i in fresh if self.mailer.is_vip(owner, ((i.get("from") or [{}])[0] or {}).get("email", ""))]
+                if vips:
+                    self.stats["latest_vip"] = self._latest(vips[-1])
+                    self.vip_looked = True
                 if any(not i["seen"] for i in fresh):
                     self.stats["new_mail"] = True
                 self.mailer.send_to(self.acc["owner"], {"type": "mail", "account": self.id, "folder": "INBOX",
@@ -668,9 +681,59 @@ class Account:
 
     async def async_counts(self) -> None:
         """Unread, VIP, flagged, drafts, today's mail and storage, for the sensors."""
-        vip = self.mailer.vip_criteria(self.acc["owner"])
+        from .features import SCREENER_FOLDER
+        from .kinds import GROUPS, sender_kind
+        owner = self.acc["owner"]
+        vip = self.mailer.vip_criteria(owner)
         drafts = await self.async_special("drafts")
         junk = await self.async_special("junk")
+        screener_path = None
+        if self.mailer.features.screener_for(owner)["on"]:
+            try:
+                folders = await self.async_folders(counts=False)
+                screener_path = next((f["path"] for f in folders if f.get("name", "").lower() == SCREENER_FOLDER.lower()), None)
+            except (ImapError, MailError):
+                pass
+        validity = self.mailer.data["state"].get(self.id, {}).get("uidvalidity")
+        if validity != self.kind_validity:
+            self.kind_cache, self.kind_validity = {}, validity
+        kinds = self.kind_cache
+        # emails added to Council and Local count in that group, whoever sent them
+        council = {int(o.get("uid") or 0) for o in self.mailer.finds.items("council", self.id) if (o.get("folder") or "INBOX") == "INBOX"}
+        look_vip = bool(vip) and not self.vip_looked
+
+        def groups(unseen: list[int]) -> dict:
+            """Unread in each Inbox group, reading only senders not seen before (the newest UNREAD_GROUP_MAX)."""
+            mine = unseen[:UNREAD_GROUP_MAX]
+            todo = [u for u in mine if u not in kinds]
+            if todo:
+                for h in self.cmd.light_headers("INBOX", todo, "FROM SUBJECT"):
+                    kinds[h["uid"]] = sender_kind(h)
+            res = {g: 0 for g in GROUPS}
+            for u in mine:
+                k = "council" if u in council else kinds.get(u)
+                if k in res:
+                    res[k] += 1
+            res["not_counted"] = max(0, len(unseen) - len(mine))
+            return res
+
+        def screener() -> dict | None:
+            uids = self.cmd.search(screener_path, "ALL")
+            key = tuple(uids[:300])
+            if key != self.screener_seen:
+                who: dict[str, dict] = {}
+                for h in self.cmd.light_headers(screener_path, list(key), "FROM SUBJECT DATE"):
+                    frm = (h.get("from") or [{}])[0] or {}
+                    e = (frm.get("email") or "").lower()
+                    if not e:
+                        continue
+                    g = who.setdefault(e, {"name": frm.get("name") or "", "email": e, "emails": 0, "latest": 0, "subject": ""})
+                    g["emails"] += 1
+                    if (h.get("date") or 0) >= g["latest"]:
+                        g["latest"], g["subject"] = h.get("date") or 0, h.get("subject") or ""
+                self.screener_seen = key
+                self.screener_senders = sorted(who.values(), key=lambda g: g["latest"], reverse=True)
+            return {"emails": len(uids), "senders": len(self.screener_senders), "waiting": self.screener_senders[:10]}
 
         def run():
             out: dict[str, Any] = {}
@@ -678,6 +741,20 @@ class Account:
             self.cmd.selected = None
             unseen = self.cmd.search("INBOX", "UNSEEN")
             out["unread"] = len(unseen)
+            try:
+                out["unread_groups"] = groups(unseen)
+            except (ImapError, MailError) as err:
+                _LOGGER.debug("Crow Email couldn't sort unread email into groups: %s", err)
+            if screener_path:
+                try:
+                    out["screener"] = screener()
+                except (ImapError, MailError) as err:
+                    _LOGGER.debug("Crow Email couldn't count the Screener: %s", err)
+            else:
+                out["screener"] = None
+            if look_vip:
+                newest = self.cmd.search("INBOX", *vip)[:1]
+                out["_vip"] = (self.cmd.headers("INBOX", newest, {}) or [None])[0] if newest else None
             out["unread_notified"] = len(set(unseen) & set(self.mailer.badge.notified(self.id)))
             out["_unseen"] = unseen
             out["unread_vip"] = len(self.cmd.search("INBOX", "UNSEEN", *vip)) if vip else 0
@@ -695,6 +772,14 @@ class Account:
             self.set_error(str(err))
             return
         unseen = set(res.pop("_unseen", None) or [])
+        if look_vip:
+            vip_item = res.pop("_vip", None)
+            self.stats["latest_vip"] = self._latest(vip_item) if vip_item else None
+            self.vip_looked = True
+        elif not vip:
+            self.stats["latest_vip"] = None
+        for u in [u for u in kinds if u not in unseen]:   # read (or gone) since: no need to remember its group
+            del kinds[u]
         self.stats.update(res)
         # notifications for email that's been read (or moved away) since - here or in another mail app
         gone = [u for u in self.mailer.badge.notified(self.id) if u not in unseen]
@@ -776,6 +861,10 @@ class Mailer:
         self.features = Features(self)
         from .aiextras import AiExtras
         self.aix = AiExtras(self)
+        from .orders import Orders
+        self.orders = Orders(self)
+        from .finds import Finds
+        self.finds = Finds(self)
         await self.hass.async_add_executor_job(os.makedirs, self.upload_dir, 0o700, True)
         # files waiting to go with a Send Later email
         for item in self.data["scheduled"]:
@@ -1071,6 +1160,7 @@ class Mailer:
         self.save()
         for a in self.accounts.values():
             if a.acc["owner"] == uid:
+                a.vip_looked = False   # the Latest VIP email sensor looks again, with the new VIPs
                 self.hass.async_create_task(a.async_counts())
         return lst
 
@@ -1139,6 +1229,16 @@ class Mailer:
         # the AI features that read new mail: the email's text is fetched now, before a rule can move it
         want = self.smart.wants(a)
         full = await self.smart.async_text(a, it) if want else None
+        # a sign-in code (no AI): from the text if it's been read, otherwise only when the subject or preview hints at one
+        try:
+            from .finds import _CODE_HINT
+            if full is not None:
+                self.finds.note_code(a, it, full.get("text") or "")
+            elif _CODE_HINT.search(f"{it.get('subject') or ''} {it.get('preview') or ''}"):
+                got = await self.smart.async_text(a, it)
+                self.finds.note_code(a, it, (got or {}).get("text") or "")
+        except Exception:  # noqa: BLE001 - never let this stop new mail
+            _LOGGER.debug("Crow Email couldn't look for a sign-in code", exc_info=True)
         if full is None:
             want = set()
         notify = acc.get("notify", "all")

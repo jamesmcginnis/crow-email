@@ -9,6 +9,7 @@ from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity import Entity
+from homeassistant.helpers.event import async_track_time_change
 
 from .const import DOMAIN, SIGNAL_ACCOUNT_UPDATED, SIGNAL_ACCOUNTS_CHANGED
 from .manager import Account, Mailer
@@ -49,6 +50,25 @@ class CrowEmailEntity(Entity):
     async def async_added_to_hass(self) -> None:
         self.async_on_remove(async_dispatcher_connect(
             self.hass, f"{SIGNAL_ACCOUNT_UPDATED}_{self.account_id}", self.async_write_ha_state))
+
+
+class HourlyRefresh:
+    """For entities that change with the clock (a bill becoming overdue, a snooze ending): looked at again every hour
+    (or every few minutes, for ones like a visit's time window)."""
+    refresh_minutes: tuple[int, ...] = (0,)
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        self.async_on_remove(async_track_time_change(self.hass, self._hourly, minute=list(self.refresh_minutes), second=5))
+
+    @callback
+    def _hourly(self, _now) -> None:
+        self.async_write_ha_state()
+
+    @property
+    def share(self) -> bool:
+        rt = self.rt
+        return rt.acc.get("share_details", True) if rt else True
 
 
 def setup_platform(hass: HomeAssistant, entry: ConfigEntry, add: Callable, make: Callable[[Account], list]) -> None:

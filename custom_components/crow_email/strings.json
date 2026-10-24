@@ -50,6 +50,81 @@
       },
       "bills_due": {
         "name": "Bills due this week"
+      },
+      "snoozed": {
+        "name": "Snoozed"
+      },
+      "reminders": {
+        "name": "Reminders"
+      },
+      "waiting_reply": {
+        "name": "Waiting for a reply"
+      },
+      "screener": {
+        "name": "Screener"
+      },
+      "next_bill": {
+        "name": "Next bill"
+      },
+      "latest_vip": {
+        "name": "Latest VIP email"
+      },
+      "subscriptions": {
+        "name": "Subscriptions"
+      },
+      "unread_people": {
+        "name": "Unread people"
+      },
+      "unread_notifications": {
+        "name": "Unread notifications"
+      },
+      "unread_shopping": {
+        "name": "Unread shopping"
+      },
+      "unread_social": {
+        "name": "Unread social"
+      },
+      "unread_newsletters": {
+        "name": "Unread newsletters"
+      },
+      "food_arriving": {
+        "name": "Food arriving"
+      },
+      "next_grocery_delivery": {
+        "name": "Next supermarket delivery"
+      },
+      "food_spend": {
+        "name": "Food order spend this month"
+      },
+      "grocery_spend": {
+        "name": "Supermarket spend this month"
+      },
+      "next_travel": {
+        "name": "Next travel"
+      },
+      "refunds_owed": {
+        "name": "Refunds owed"
+      },
+      "return_deadline": {
+        "name": "Return deadline"
+      },
+      "next_renewal": {
+        "name": "Next renewal"
+      },
+      "next_home_visit": {
+        "name": "Next home visit"
+      },
+      "next_event": {
+        "name": "Next event"
+      },
+      "council_updates": {
+        "name": "Council updates"
+      },
+      "warranties_ending": {
+        "name": "Warranties ending soon"
+      },
+      "unread_council": {
+        "name": "Unread council and local"
       }
     },
     "binary_sensor": {
@@ -58,6 +133,33 @@
       },
       "new_mail": {
         "name": "New mail"
+      },
+      "out_for_delivery": {
+        "name": "Parcel out for delivery"
+      },
+      "bill_overdue": {
+        "name": "Bill overdue"
+      },
+      "food_order": {
+        "name": "Food order in progress"
+      },
+      "groceries_coming": {
+        "name": "Supermarket delivery coming"
+      },
+      "away_on_trip": {
+        "name": "Away on a trip"
+      },
+      "travel_disruption": {
+        "name": "Travel disruption"
+      },
+      "renewal_due_soon": {
+        "name": "Renewal due soon"
+      },
+      "home_visit_today": {
+        "name": "Home visit today"
+      },
+      "home_visit_now": {
+        "name": "Home visit now"
       }
     }
   },

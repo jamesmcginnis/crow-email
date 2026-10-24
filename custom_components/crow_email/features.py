@@ -576,6 +576,52 @@ class Features:
             if s["until"] <= end:
                 items.append({"kind": "snoozed", "title": s.get("subject") or "(No subject)", "at": s["until"],
                               "sub": "Back from Snooze", "account": s.get("account"), "id": s["id"]})
+        for kind in ("food", "groceries"):
+            for o in self.mailer.orders.list_for(uid, kind):
+                if (account_id and o.get("account") != account_id) or o["status"] in ("delivered", "collected", "cancelled"):
+                    continue
+                at = o.get("when")
+                if not at or at > end:
+                    continue
+                coll = o.get("method") == "collection"
+                if kind == "food":
+                    items.append({"kind": "food", "title": o.get("restaurant") or "Food order",
+                                  "sub": "Ready to collect" if coll else "Food arriving", "at": at,
+                                  "account": o.get("account"), "id": o["id"]})
+                else:
+                    items.append({"kind": "grocery", "title": o.get("shop") or "Supermarket",
+                                  "sub": "Click and collect" if coll else "Supermarket delivery", "at": at,
+                                  "account": o.get("account"), "id": o["id"]})
+        # Travel, Home Visits and Tickets today; returns and renewals due today; council deadlines today
+        today_s = today.isoformat()
+        for a in self._accounts(uid):
+            if account_id and a.id != account_id:
+                continue
+            fd = self.mailer.finds
+            for o in fd.active("travel", a.id):
+                if o.get("start_at") and o["start_at"] <= end:
+                    items.append({"kind": "travel", "title": o.get("title") or "Travel", "at": o["start_at"], "account": a.id, "id": o["id"],
+                                  "sub": "Delayed" if o.get("status") == "delayed" else "Cancelled" if o.get("status") == "cancelled" else "Travel"})
+            for o in fd.active("visits", a.id):
+                if o.get("start_at") and o["start_at"] <= end:
+                    items.append({"kind": "visit", "title": o.get("what") or "Home visit", "at": o["start_at"], "account": a.id,
+                                  "id": o["id"], "sub": o.get("company") or "Home visit"})
+            for o in fd.active("tickets", a.id):
+                if o.get("start_at") and o["start_at"] <= end:
+                    items.append({"kind": "ticket", "title": o.get("event") or "Event", "at": o.get("doors_at") or o["start_at"],
+                                  "account": a.id, "id": o["id"], "sub": o.get("venue") or "Tickets"})
+            for o in fd.active("returns", a.id):
+                if o.get("return_by") == today_s and o.get("status") in ("started", "label_ready"):
+                    items.append({"kind": "return", "title": o.get("item") or "A return", "account": a.id, "id": o["id"],
+                                  "sub": "Last day to send back"})
+            for o in fd.active("renewals", a.id):
+                if o.get("renews") == today_s:
+                    items.append({"kind": "renewal", "title": o.get("what") or "Renewal", "account": a.id, "id": o["id"],
+                                  "sub": "Renews today"})
+            for o in fd.active("council", a.id):
+                if today_s in (o.get("date"), o.get("action_by")):
+                    items.append({"kind": "council", "title": o.get("title") or "Council", "account": a.id, "id": o["id"],
+                                  "sub": "Deadline today" if o.get("action_by") == today_s else "Today"})
         try:
             items += self.mailer.aix.today_extra(uid, account_id)
         except Exception:  # noqa: BLE001

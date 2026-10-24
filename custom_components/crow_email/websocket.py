@@ -173,6 +173,10 @@ def _state(hass: HomeAssistant, mailer: Mailer, uid: str, is_admin: bool) -> dic
         "contacts": mailer.book.contacts_for(uid),
         "backgrounds": mailer.book.backgrounds_for(uid),
         "parcels": mailer.smart.parcels_for(uid),
+        "food": mailer.orders.list_for(uid, "food"),
+        "groceries": mailer.orders.list_for(uid, "groceries"),
+        "finds": {k: mailer.finds.list_for(uid, k) for k in FIND_KINDS},
+        "codes": mailer.finds.codes_for(uid),
         "images": mailer.images_for(uid),
         "blocked": mailer.spam.lists_for(uid),
         "badge": mailer.badge.state_for(uid),
@@ -451,6 +455,8 @@ def ws_phishing_places(hass, mailer, uid, msg):
 async def ws_phishing_report(hass, mailer, uid, msg):
     a = mailer.account(uid, msg["account"])
     mailer.smart.drop_parcels(a, msg["folder"], [msg["uid"]])
+    mailer.orders.drop(a, msg["folder"], [msg["uid"]])
+    mailer.finds.drop(a, msg["folder"], [msg["uid"]])
     return await mailer.spam.async_report_phishing(a, msg["folder"], msg["uid"], msg["places"])
 
 
@@ -583,6 +589,8 @@ async def ws_folder_empty(hass, mailer, uid, msg):
 async def ws_junk(hass, mailer, uid, msg):
     a = mailer.account(uid, msg["account"])
     mailer.smart.drop_parcels(a, msg["folder"], msg["uids"])   # a fake delivery email: its parcel goes too
+    mailer.orders.drop(a, msg["folder"], msg["uids"])
+    mailer.finds.drop(a, msg["folder"], msg["uids"])
     dest = await a.async_special("junk", create="Junk")
     await a.async_move(msg["folder"], msg["uids"], dest)
     return {"to": dest}
@@ -1117,6 +1125,94 @@ async def ws_parcels_add(hass, mailer, uid, msg):
     if not mailer.smart.add_parcel(a, it, parcel, force=not msg["auto"]):
         raise MailError("removed", "You deleted this parcel from Parcels.")
     return mailer.smart.parcels_for(uid)
+
+
+# ── Food Orders and Supermarket Deliveries ──
+ORDER_KIND = vol.Required("kind")
+
+
+@command("orders", {ORDER_KIND: vol.In(("food", "groceries"))})
+def ws_orders(hass, mailer, uid, msg):
+    return mailer.orders.list_for(uid, msg["kind"])
+
+
+@command("orders/locate", {ACC: str, ORDER_KIND: vol.In(("food", "groceries")), vol.Required("item"): str})
+async def ws_orders_locate(hass, mailer, uid, msg):
+    return await mailer.orders.async_locate(uid, msg["account"], msg["kind"], msg["item"])
+
+
+@command("orders/action", {ACC: str, ORDER_KIND: vol.In(("food", "groceries")), vol.Required("item"): str,
+                           vol.Required("action"): vol.In(("remove", "delivered", "undelivered", "restore"))})
+def ws_orders_action(hass, mailer, uid, msg):
+    return mailer.orders.action(uid, msg["account"], msg["kind"], msg["item"], msg["action"])
+
+
+# Add to Food Orders or Supermarket Deliveries: an email that wasn't caught as it arrived (older mail, a forward,
+# or one that went into Parcels before these existed). It leaves Parcels when it's added here.
+@command("orders/add", {**ONE_MSG, ORDER_KIND: vol.In(("food", "groceries"))})
+async def ws_orders_add(hass, mailer, uid, msg):
+    kind = msg["kind"]
+    if not ai.on(hass, mailer, kind):
+        raise MailError("ai_unavailable", ("Food Orders are" if kind == "food" else "Supermarket Deliveries are")
+                        + " turned off. An administrator can turn them on in the card editor.")
+    a = mailer.account(uid, msg["account"])
+    m = await _msg(mailer, uid, msg)
+    it = {"uid": int(msg["uid"]), "folder": msg.get("folder") or "INBOX", "subject": m.get("subject", ""), "from": m.get("from"),
+          "message_id": m.get("message_id") or ""}
+    res = await ai.analyse(hass, mailer, m, {kind})
+    found = res.get("food" if kind == "food" else "grocery")
+    if not found:
+        raise MailError("not_found", "Couldn't find a food order in this email." if kind == "food"
+                        else "Couldn't find a supermarket delivery in this email.")
+    mailer.orders.add(a, it, kind, found, force=True)
+    mailer.smart.drop_parcels(a, it["folder"], [it["uid"]])
+    return mailer.orders.list_for(uid, kind)
+
+
+# ── Travel, Returns, Renewals, Home Visits, Tickets, Council and Receipts ──
+FIND_KINDS = ("travel", "returns", "renewals", "visits", "tickets", "council", "receipts")
+FIND_KIND = vol.Required("kind")
+
+
+@command("finds", {FIND_KIND: vol.In(FIND_KINDS)})
+def ws_finds(hass, mailer, uid, msg):
+    return mailer.finds.list_for(uid, msg["kind"])
+
+
+@command("finds/locate", {ACC: str, FIND_KIND: vol.In(FIND_KINDS), vol.Required("item"): str})
+async def ws_finds_locate(hass, mailer, uid, msg):
+    return await mailer.finds.async_locate(uid, msg["account"], msg["kind"], msg["item"])
+
+
+@command("finds/action", {ACC: str, FIND_KIND: vol.In(FIND_KINDS), vol.Required("item"): str,
+                          vol.Required("action"): vol.In(("remove", "restore", "status")),
+                          vol.Optional("status", default=""): vol.All(str, vol.Length(max=20))})
+def ws_finds_action(hass, mailer, uid, msg):
+    return mailer.finds.action(uid, msg["account"], msg["kind"], msg["item"], msg["action"], msg["status"])
+
+
+# Add to Travel, Returns and the rest: an email that wasn't caught as it arrived
+@command("finds/add", {**ONE_MSG, FIND_KIND: vol.In(FIND_KINDS)})
+async def ws_finds_add(hass, mailer, uid, msg):
+    kind = msg["kind"]
+    if not ai.on(hass, mailer, kind):
+        raise MailError("ai_unavailable", "That's turned off. An administrator can turn it on in the card editor.")
+    a = mailer.account(uid, msg["account"])
+    m = await _msg(mailer, uid, msg)
+    it = {"uid": int(msg["uid"]), "folder": msg.get("folder") or "INBOX", "subject": m.get("subject", ""), "from": m.get("from"),
+          "message_id": m.get("message_id") or ""}
+    found = ((await ai.analyse(hass, mailer, m, {kind})).get("finds") or {}).get(kind)
+    if not found:
+        raise MailError("not_found", "Couldn't find anything for that in this email.")
+    mailer.finds.add(a, it, kind, found, force=True)
+    if kind == "returns":
+        mailer.smart.drop_parcels(a, it["folder"], [it["uid"]])
+    return mailer.finds.list_for(uid, kind)
+
+
+@command("codes/done", {vol.Required("id"): str})
+def ws_codes_done(hass, mailer, uid, msg):
+    return mailer.finds.code_done(uid, msg["id"])
 
 
 @command("nudges", {vol.Optional("check", default=False): bool})
