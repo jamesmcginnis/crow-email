@@ -6,15 +6,16 @@
 (() => {
 'use strict';
 
-const CE_VERSION = '0.0.73';
-const CE_BUILD = '19 Oct 2026';
+const CE_VERSION = '0.0.78';
+const CE_BUILD = '24 Oct 2026';
 const DOMAIN = 'crow_email';
 
 // ── Icons ───────────────────────────────────────────────────────────────────
 const _s = (d, extra = '') => `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" ${extra}>${d}</svg>`;
 const _f = (d) => `<svg viewBox="0 0 24 24" fill="currentColor">${d}</svg>`;
 const AI_FEATS = ['summary', 'replies', 'writing', 'translate', 'actions', 'ask', 'thread', 'attachments', 'search', 'tone', 'scam', 'describe', 'notify', 'categories', 'parcels', 'automation', 'followup', 'assist', 'rules',
-  'smart_snooze', 'screener_notes', 'sub_notes', 'tidy', 'chaser', 'signatures', 'appointments', 'bills', 'briefing'];
+  'smart_snooze', 'screener_notes', 'sub_notes', 'tidy', 'chaser', 'signatures', 'appointments', 'bills', 'briefing', 'food', 'groceries',
+  'travel', 'returns', 'renewals', 'visits', 'tickets', 'council', 'receipts'];
 const AI_BACKGROUND = ['notify', 'categories', 'parcels', 'automation', 'followup', 'assist', 'rules'];
 const ICON = {
   back: _s('<path d="M15 19l-7-7 7-7"/>', 'stroke-width="2.4"'),
@@ -1229,7 +1230,7 @@ const CE_DEFAULTS = {
   use_ha_theme: false,
   preview_lines: 2,          // 0 to 5
   show_avatars: true,
-  inbox_groups: false,       // the Inbox in sections: People, Notifications, Shopping, Social, Newsletters
+  inbox_groups: false,       // the Inbox in sections: People, Notifications, Council and Local, Shopping, Social, Newsletters
   default_skin: 'iphone',
   wide_layout: 'auto',     // auto: three columns when the card is wide enough | off
   swipe_action: 'archive',   // what a long swipe to the left does: archive | trash
@@ -1252,6 +1253,7 @@ const CE_DEFAULTS = {
   sweep: false,                // Sweep: everything from one sender, deleted or archived
   custom_swipes: false,        // each person chooses what their swipes do
   show_today: false,           // Today at the top of the Mailboxes
+  show_codes: true,            // the latest sign-in code at the top of the Inbox, with Copy, for 10 minutes
 };
 const ACCOUNT_COLOURS = ['#0A84FF', '#34C759', '#FF9500', '#FF2D55', '#AF52DE', '#5AC8FA', '#FFCC00', '#8E8E93'];
 const SMART = {
@@ -1283,7 +1285,7 @@ class CrowEmailCard extends HTMLElement {
     this._config = { ...CE_DEFAULTS };
     this._s = {
       ready: false, error: null, accounts: [], vips: [], scheduled: [], reminders: [], providers: {}, ai: {},
-      isAdmin: false, microsoftReady: false, maxMb: 25, devices: [], people: null, prefs: {}, contacts: [], backgrounds: {}, parcels: [], nudges: [], blocked: { senders: [], domains: [], safe_senders: [], safe_domains: [], action: 'junk' },
+      isAdmin: false, microsoftReady: false, maxMb: 25, devices: [], people: null, prefs: {}, contacts: [], backgrounds: {}, parcels: [], food: [], groceries: [], finds: {}, codes: [], nudges: [], blocked: { senders: [], domains: [], safe_senders: [], safe_domains: [], action: 'junk' },
     };
     this._folders = new Map();   // account id -> {list, at}
     this._stack = [];
@@ -1344,7 +1346,7 @@ class CrowEmailCard extends HTMLElement {
   // ── Build and theme ────────────────────────────────────────────────────
   _build() {
     this._built = true;
-    this.shadowRoot.innerHTML = `<style>${CE_CSS}${CE_LIVE_CSS}${PEOPLE_CSS}${AI_CSS}${IMG_CSS}${SPAM_CSS}${EMOJI_CSS}${EXTRAS_CSS}${PDF_CSS}${RULES_CSS}${SKIN_CSS}${WIDE_CSS}${FS_CSS}${FEAT_CSS}${FEAT2_CSS}</style><ha-card><div class="ce-root"><div class="ce-noreader">${ICON.mail}<span>No Message Selected</span></div><div class="ce-pages"></div></div></ha-card>`;
+    this.shadowRoot.innerHTML = `<style>${CE_CSS}${CE_LIVE_CSS}${PEOPLE_CSS}${AI_CSS}${IMG_CSS}${SPAM_CSS}${EMOJI_CSS}${EXTRAS_CSS}${PDF_CSS}${RULES_CSS}${SKIN_CSS}${WIDE_CSS}${FS_CSS}${FEAT_CSS}${FEAT2_CSS}${ORDERS_CSS}${FINDS_CSS}</style><ha-card><div class="ce-root"><div class="ce-noreader">${ICON.mail}<span>No Message Selected</span></div><div class="ce-pages"></div></div></ha-card>`;
     this._root = this.shadowRoot.querySelector('.ce-root');
     this._card = this.shadowRoot.querySelector('ha-card');
     // the browser closed the full screen layer by itself: put the card back
@@ -1438,7 +1440,7 @@ class CrowEmailCard extends HTMLElement {
           providers: ev.providers || {}, ai: ev.ai || {}, isAdmin: !!ev.is_admin, microsoftReady: !!ev.microsoft_ready,
           maxMb: ev.max_attachment_mb || 25, parcelKeepDays: ev.parcel_keep_days ?? 3, devices: ev.devices || [], prefs: ev.prefs || {},
           contacts: ev.contacts || [], backgrounds: ev.backgrounds || {},
-          parcels: ev.parcels || [], nudges: ev.nudges || [], images: ev.images || s.images || { mode: 'ask', senders: [], domains: [], trackers: true, proxy: false },
+          parcels: ev.parcels || [], food: ev.food || [], groceries: ev.groceries || [], finds: ev.finds || {}, codes: ev.codes || [], nudges: ev.nudges || [], images: ev.images || s.images || { mode: 'ask', senders: [], domains: [], trackers: true, proxy: false },
           blocked: ev.blocked || s.blocked, badge: ev.badge || s.badge || null,
           quiet: ev.quiet || s.quiet || null, sounds: ev.sounds || s.sounds || null,
           emptying: ev.cached ? (s.emptying || {}) : Object.fromEntries((ev.emptying || []).map(x => [`${x.account}|${x.folder}`, x])),
@@ -1446,6 +1448,7 @@ class CrowEmailCard extends HTMLElement {
           appointments: ev.appointments || [], bills: ev.bills || [], briefing: ev.briefing || null,
           live: !ev.cached,
         });
+        this._codesTick();
         if (!ev.cached) this._migrateTrusted();
         this._applyTheme();
         const first = !s.ready;
@@ -1493,6 +1496,11 @@ class CrowEmailCard extends HTMLElement {
       case 'prefs': s.prefs = ev.prefs || {}; this._applyTheme(); this._refresh('view'); break;
       case 'sent': this._refresh('sent', ev); break;
       case 'parcels': s.parcels = ev.parcels || []; this._refresh('parcels'); break;
+      case 'food': s.food = ev.food || []; this._refresh('food'); break;
+      case 'groceries': s.groceries = ev.groceries || []; this._refresh('groceries'); break;
+      case 'finds_travel': case 'finds_returns': case 'finds_renewals': case 'finds_visits': case 'finds_tickets': case 'finds_council': case 'finds_receipts':
+        s.finds = { ...(s.finds || {}), [ev.kind]: ev.items || [] }; this._refresh(ev.type); break;
+      case 'codes': s.codes = ev.codes || []; this._refresh('codes'); this._codesTick(); break;
       case 'nudges': s.nudges = ev.nudges || []; this._refresh('nudges'); break;
       case 'categories':
         this._catMap = this._catMap || {};
@@ -1973,6 +1981,9 @@ Object.assign(CrowEmailCard.prototype, {
       if (s.scheduled.length) html += row('data-p="scheduled"', 'sendLater', 'Send Later', s.scheduled.length);
       if (s.reminders.length) html += row('data-p="reminders"', 'remind', 'Remind Me', s.reminders.filter(r => r.fired).length || '');
       if (s.ai?.parcels || (s.parcels || []).length) html += row('data-p="parcels"', 'parcel', 'Parcels', this._activeParcels().length, '', 'brown');
+      if (this._ordersOn('food')) html += row('data-p="food"', 'food', 'Food Orders', this._activeOrders('food').length, '', 'food');
+      if (this._ordersOn('groceries')) html += row('data-p="groceries"', 'basket', 'Supermarket Deliveries', this._activeOrders('groceries').length, '', 'grocery');
+      FIND_ORDER.forEach(k => { if (this._findShown(k)) html += row(`data-fk="${k}"`, FIND_KIND[k].icon, FIND_KIND[k].title, this._findCount(k) || '', '', `f-${k}`); });
       if (s.ai?.followup || (s.nudges || []).length) html += row('data-p="followups"', 'followup', 'Follow Up', (s.nudges || []).length, '', 'purple');
       if (this._feat('snooze') && (s.snoozed || []).length) html += row('data-p="snoozed"', 'snooze', 'Snoozed', s.snoozed.length, '', 'indigo');
       if (this._feat('screener') && s.screener?.on) html += row('data-p="screener"', 'screener', 'Screener', this._screenerWaiting(), '', 'orange');
@@ -2033,6 +2044,7 @@ Object.assign(CrowEmailCard.prototype, {
       if (!r) return;
       if (r.dataset.k) this._nav('list', { kind: r.dataset.k });
       else if (r.dataset.p) this._nav(r.dataset.p);
+      else if (r.dataset.fk) this._nav('finds', { kind: r.dataset.fk });
       else if (r.dataset.acc) this._nav('list', { account: r.dataset.acc, folder: r.dataset.f });
     });
 
@@ -2040,7 +2052,7 @@ Object.assign(CrowEmailCard.prototype, {
       el,
       refresh: (what) => {
         if (['all', 'accounts', 'back'].includes(what)) loadFolders(what === 'accounts');
-        if (['all', 'accounts', 'counts', 'scheduled', 'reminders', 'settings', 'back', 'mail', 'parcels', 'nudges', 'snoozed', 'screener', 'muted', 'appointments', 'bills'].includes(what)) draw();
+        if (['all', 'accounts', 'counts', 'scheduled', 'reminders', 'settings', 'back', 'mail', 'parcels', 'food', 'groceries', 'nudges', 'snoozed', 'screener', 'muted', 'appointments', 'bills'].includes(what) || String(what).startsWith('finds_')) draw();
       },
     }, () => 'mailboxes');
   },
@@ -2235,7 +2247,7 @@ Object.assign(CrowEmailCard.prototype, {
       <div class="edge top tall"></div>
       <div class="tabs"><button data-tab="focused" class="on">Focused</button><button data-tab="other">Other</button></div>
       <div class="skinbar"></div>
-      <div class="scroll"><div class="skinbanner"></div><div class="chips"></div><div class="cats" hidden></div><div class="aiex"></div><div class="errs"></div><div class="pnote-box"></div><div class="parcel-box"></div><div class="pinned-box"></div><div class="emptybar-box"></div><div class="colhead"><span class="c-flag"></span><span class="c-from">From</span><span class="c-subj">Subject</span><span class="c-date">Received</span></div><div class="mlist"></div><div class="loadmore"></div></div>
+      <div class="scroll"><div class="skinbanner"></div><div class="chips"></div><div class="cats" hidden></div><div class="aiex"></div><div class="errs"></div><div class="codes-box"></div><div class="pnote-box"></div><div class="parcel-box"></div><div class="pinned-box"></div><div class="emptybar-box"></div><div class="colhead"><span class="c-flag"></span><span class="c-from">From</span><span class="c-subj">Subject</span><span class="c-date">Received</span></div><div class="mlist"></div><div class="loadmore"></div></div>
       <div class="edge bottom"></div>
       <div class="bottom normal">
         <button class="cb g" data-a="filter" aria-label="Filter">${ICON.filter}</button>
@@ -2250,6 +2262,7 @@ Object.assign(CrowEmailCard.prototype, {
       </div></div>`);
     const scroll = el.querySelector('.scroll'), list = el.querySelector('.mlist'), more = el.querySelector('.loadmore');
     el.querySelector('.pnote-box').addEventListener('click', (e) => this._parcelNoteClick(e, el.querySelector('.pnote-box')));
+    el.querySelector('.codes-box').addEventListener('click', (e) => this._codesClick(e));
     const titleEl = el.querySelector('.top .tt'), sub = el.querySelector('.top .ts'), chips = el.querySelector('.chips');
     st.tab = 'focused';
     const input = el.querySelector('.searchbar input');
@@ -2312,6 +2325,7 @@ Object.assign(CrowEmailCard.prototype, {
       // the parcel countdown lives on the first screen: here, when the card opens to the Inbox
       el.querySelector('.pnote-box').innerHTML = combined && data.kind === 'inbox' && this._config.start_mailbox === 'all_inboxes' && !st.searching && !st.editing ? this._parcelNote() : '';
       el.querySelector('.parcel-box').innerHTML = isInbox() && !st.searching && !st.editing && st.filter === 'all' ? this._parcelStrip() : '';
+      el.querySelector('.codes-box').innerHTML = isInbox() && !st.searching && !st.editing ? this._codesStrip() : '';
       const pinKeys = this._drawPinned(el.querySelector('.pinned-box'), { combined, account: data.account, show: isInbox() && !st.searching && st.filter === 'all' && !st.editing && !this._skin().tabs && (!catsOn() || st.cat === 'all') });
       list.classList.toggle('editing', st.editing);
       drawEmptying();
@@ -2324,14 +2338,14 @@ Object.assign(CrowEmailCard.prototype, {
       const sk = this._skin();
       const row = (it, index) => this._rowHtml(it, { ...opts, index, sentView: opts.sentView || it.folder !== 'INBOX' && this._isSpecial(it.account, it.folder, 'sent'), selected: st.selected.has(this._itemKey(it)) });
       let show = pinKeys.size ? items.filter(it => !pinKeys.has(this._itemKey(it))) : items;
-      if (sk.tabs && isInbox() && !st.searching) show = items.filter(it => (senderKind(it) === 'person') === (st.tab === 'focused'));
+      if (sk.tabs && isInbox() && !st.searching) show = items.filter(it => (this._kindOf(it) === 'person') === (st.tab === 'focused'));
       if (catsOn() && st.cat !== 'all') show = items.filter(it => this._catOf(it) === st.cat);
       const grouped = this._groupsOn() && isInbox() && !st.searching;
       list.classList.toggle('grouped', grouped);
       if (grouped) {
-        const order = [['person', 'People'], ['notify', 'Notifications'], ['shop', 'Shopping'], ['social', 'Social'], ['news', 'Newsletters']];
+        const order = [['person', 'People'], ['notify', 'Notifications'], ['council', 'Council and Local'], ['shop', 'Shopping'], ['social', 'Social'], ['news', 'Newsletters']];
         list.innerHTML = order.map(([k, label]) => {
-          const g = show.filter(it => senderKind(it) === k);
+          const g = show.filter(it => this._kindOf(it) === k);
           return g.length ? `<div class="ghead">${esc(label)}<span>${g.length}</span></div><div class="ggroup">${g.map(row).join('')}</div>` : '';
         }).join('');
       } else if (sk.rows === 'bb') {
@@ -2638,6 +2652,13 @@ Object.assign(CrowEmailCard.prototype, {
         const n = this._activeParcels().length;
         items.push({ text: n ? `Parcels (${n})` : 'Parcels', value: 'parcels', icon: 'parcel' });
       }
+      for (const k of ['food', 'groceries']) {
+        if (!this._ordersOn(k)) continue;
+        const n = this._activeOrders(k).length;
+        items.push({ text: n ? `${ORDER_KIND[k].title} (${n})` : ORDER_KIND[k].title, value: k, icon: ORDER_KIND[k].icon });
+      }
+      const fk = FIND_ORDER.filter(k => this._findShown(k));
+      if (fk.length) items.push({ text: 'More Sections', value: 'findsmenu', icon: 'list', sub: fk.map(k => ({ text: this._findCount(k) ? `${FIND_KIND[k].title} (${this._findCount(k)})` : FIND_KIND[k].title, value: `find:${k}`, icon: FIND_KIND[k].icon })) });
       items.push({ sep: true }, { header: 'View Options' });
       if (this._skin().avatar !== 'none') items.push({ text: 'Show Contact Photos', value: 'avatars', icon: 'person', checked: this._view('avatars') });
       if (isInbox()) items.push({ text: 'Group by Type', value: 'groups', icon: 'list', checked: this._groupsOn() });
@@ -2657,6 +2678,7 @@ Object.assign(CrowEmailCard.prototype, {
       const accs = combined ? this._s.accounts : [acc].filter(Boolean);
       if (!v) return;
       if (v.startsWith('skin:')) { this._setSkin(v.slice(5)); return; }
+      if (v.startsWith('find:')) { this._nav('finds', { kind: v.slice(5) }); return; }
       if (v.startsWith('bg:')) { this._bgChoice(`box:${data.kind || `${data.account}:${data.folder}`}`, v.slice(3), 'This Mailbox'); return; }
       try {
         if (v === 'catchup') this._catchUp(combined ? null : data.account);
@@ -2666,8 +2688,8 @@ Object.assign(CrowEmailCard.prototype, {
           [st.items, st.results || []].forEach(arr => arr.forEach(i => { i.seen = true; }));
           draw();
           this._toast(res.count ? `${res.count} email${res.count === 1 ? '' : 's'} marked as read` : 'Nothing was unread');
-        } else if (v === 'parcels') {
-          this._nav('parcels');
+        } else if (v === 'parcels' || v === 'food' || v === 'groceries') {
+          this._nav(v);
         } else if (v === 'select') {
           st.editing = true; st.selected.clear(); closeOpen(); draw();
         } else if (v === 'refresh') {
@@ -2885,6 +2907,7 @@ Object.assign(CrowEmailCard.prototype, {
         }
         if (what === 'back') { soft(); draw(); return; }
         if (what === 'fullscreen') { drawHead(); return; }
+        if (what === 'codes') { el.querySelector('.codes-box').innerHTML = isInbox() && !st.searching && !st.editing ? this._codesStrip() : ''; return; }
         if (what === 'emptying') {
           if (!extra || `${extra.account}|${extra.folder}` !== emKey) return;
           if (extra.state === 'done') { drawHead(); el.querySelector('.emptybar-box').innerHTML = ''; slideAway(); }
@@ -2893,7 +2916,7 @@ Object.assign(CrowEmailCard.prototype, {
           return;
         }
         if (what === 'counts' || what === 'vips' || what === 'accounts' || what === 'settings') drawHead();
-        if (what === 'view' || what === 'categories' || what === 'pins' || what === 'parcels') draw();
+        if (what === 'view' || what === 'categories' || what === 'pins' || what === 'parcels' || what === 'finds_council') draw();
         if (what === 'settings') { draw(); sortCats(); }
       },
       remove: (key) => drop([key]),
@@ -3483,6 +3506,7 @@ Object.assign(CrowEmailCard.prototype, {
         { text: 'Reply All', value: 'replyall', icon: 'replyAll' },
         { text: 'Forward', value: 'forward', icon: 'forward' },
         ...(() => { const ti = trackItems(); return ti.length ? [{ text: 'Track Parcel', value: 'track', icon: 'parcel', sub: ti }] : []; })(),
+        ...(() => { const oi = [...this._orderMenuItems(), ...this._findMenuItems()]; return oi.length ? [{ text: 'Add to…', value: 'addorder', icon: 'cart', sub: oi }] : []; })(),
         { text: 'Remind Me', value: 'remind', icon: 'remind' },
         ...(this._feat('snooze') ? [{ text: 'Snooze…', value: 'snooze', icon: 'snooze' }] : []),
         ...(this._feat('mute') ? [{ text: m.muted ? 'Unmute Conversation' : 'Mute Conversation', value: 'mute', icon: 'bellOff' }] : []),
@@ -3516,6 +3540,8 @@ Object.assign(CrowEmailCard.prototype, {
       if (!m) return;
       if (String(v).startsWith('trk:')) { trackDo(v); return; }
       if (String(v).startsWith('cal:')) { addDate(+String(v).slice(4)); return; }
+      if (String(v).startsWith('addorder:')) { this._addOrderFrom(String(v).slice(9), it); return; }
+      if (String(v).startsWith('addfind:')) { this._addFindFrom(String(v).slice(8), it); return; }
       if (String(v).startsWith('sweep:')) {
         const r = await this._sweep(it.account, it.folder, (m.from || [])[0], v);
         if (r?.count && v.endsWith(':none')) afterRemove();
@@ -5184,11 +5210,16 @@ const SKINS = [
 ];
 const SKIN_BY = Object.fromEntries(SKINS.map(s => [s.id, s]));
 
-// What kind of sender: a person, or something automatic (for tiles, Focused/Other and Spark's groups)
+// What kind of sender: a person, or something automatic (for tiles, Focused/Other and Spark's groups).
+// Councils and government come first (their own group, Council and Local), so their mailing services
+// (govdelivery, .gov.uk) aren't read as shops. An email added to Council and Local joins that group too (_kindOf).
+// Shopping and Newsletter words must start a word, so "govdelivery", "border" or "restore" don't match.
+// kinds.py in the integration uses the same rules for the Unread sensors of each group: change both together.
 const KIND_RULES = [
-  ['shop', /amazon|ebay|etsy|order|shipment|shipping|dispatch|deliver|parcel|receipt|invoice|payment|paypal|bill|checkout|basket|store|shop/i],
+  ['council', /govdelivery|granicus|\.gov\b|\bcouncils?\b|\bnhs\b|\bhmrc\b|\bdvla\b/i],
+  ['shop', /amazon|ebay|etsy|paypal|\b(?:orders?|ordered|order[-_.]?confirm|shipment|shipping|dispatch|deliver|parcel|receipt|invoice|payment|billing|bills?\b|checkout|basket|store|shop)/i],
   ['social', /facebook|instagram|twitter|x\.com|linkedin|tiktok|reddit|whatsapp|discord|pinterest|snapchat|youtube|strava/i],
-  ['news', /newsletter|digest|weekly|daily|news|marketing|offers?|deals?|promo|sale|subscribe|substack|mailchimp/i],
+  ['news', /substack|mailchimp|\b(?:newsletter|digest|weekly|daily|news|marketing|offers?\b|deals?\b|promo|sales?\b|subscribe)/i],
   ['notify', /no-?reply|do-?not-?reply|notification|notify|alert|security|verify|account|support|service|team|info@|hello@|mailer|bounce|updates?@|github|google|apple|microsoft/i],
 ];
 const KIND_TILE = {
@@ -5196,12 +5227,13 @@ const KIND_TILE = {
   social: { icon: 'people', bg: 'linear-gradient(180deg,#5AC8FA,#0A84FF)', label: 'Social' },
   news: { icon: 'megaphone', bg: 'linear-gradient(180deg,#BF5AF2,#8E44AD)', label: 'Newsletters' },
   notify: { icon: 'starF', bg: 'linear-gradient(180deg,#FF6FD8,#E040A0)', label: 'Notifications' },
+  council: { icon: 'townhall', bg: 'linear-gradient(180deg,#64D2FF,#30A2D9)', label: 'Council and Local' },
 };
 function senderKind(it) {
   const frm = (it.from || [])[0] || {};
   const text = `${frm.email || ''} ${frm.name || ''}`;
   for (const [kind, re] of KIND_RULES) if (re.test(text)) return kind;
-  if (/receipt|order|invoice|delivery|your bill/i.test(it.subject || '')) return 'shop';
+  if (/\b(?:receipt|orders?|ordered|invoice|delivery|delivered|your bill)\b/i.test(it.subject || '')) return 'shop';
   return 'person';
 }
 
@@ -5216,6 +5248,12 @@ Object.assign(ICON, {
 });
 
 Object.assign(CrowEmailCard.prototype, {
+  // the Inbox group an email goes in: one added to Council and Local goes there, whoever sent it
+  _kindOf(it) {
+    const f = this._s?.finds?.council;
+    if (f?.length && f.some(o => o.account === it.account && +o.uid === +it.uid && (o.folder || 'INBOX') === (it.folder || 'INBOX'))) return 'council';
+    return senderKind(it);
+  },
   _skin() { return SKIN_BY[this._s?.prefs?.skin] || SKIN_BY[this._config.default_skin] || SKIN_BY.iphone; },
 
   _skinItems() {
@@ -5235,7 +5273,7 @@ Object.assign(CrowEmailCard.prototype, {
   _tile(it, person, size = 40) {
     const sk = this._skin();
     if (sk.avatar === 'none') return '';
-    const kind = it ? senderKind(it) : 'person';
+    const kind = it ? this._kindOf(it) : 'person';
     const shape = sk.avatar === 'tile' ? 'tile' : sk.avatar === 'square' ? 'sq' : '';
     if (kind !== 'person' && it) {
       const t = KIND_TILE[kind];
@@ -12198,13 +12236,24 @@ Object.assign(CrowEmailCard.prototype, {
       const d = Math.round((new Date(`${x.due}T00:00`) - new Date(`${iso}T00:00`)) / 86400000);
       if (d <= 3) out.push({ kind: 'bill', id: x.id, title: `${x.payee || 'A bill'}${x.amount != null ? ` · ${this._money(x)}` : ''}`, sub: d < 0 ? 'Overdue' : d === 0 ? 'Due today' : d === 1 ? 'Due tomorrow' : `Due in ${d} days` });
     });
+    const todayIso = iso;
+    this._findActive('travel').filter(o => o.start_at && o.start_at <= E).forEach(o => out.push({ kind: 'travel', id: o.id, title: this._findTitle('travel', o), sub: o.status === 'delayed' ? `Delayed${o.delay_minutes ? ` ${o.delay_minutes} min` : ''}` : o.status === 'changed' ? 'Changed' : 'Travel', at: o.start_at }));
+    this._findActive('visits').filter(o => o.start_at && o.start_at <= E).forEach(o => out.push({ kind: 'visit', id: o.id, title: o.what || 'Home visit', sub: o.end_at ? `${o.company ? `${o.company} · ` : ''}until ${fmtTime(o.end_at, this._hass)}` : (o.company || 'Home visit'), at: o.start_at }));
+    this._findActive('tickets').filter(o => o.start_at && o.start_at <= E).forEach(o => out.push({ kind: 'ticket', id: o.id, title: o.event, sub: o.doors_at ? `Doors ${fmtTime(o.doors_at, this._hass)}${o.venue ? ` · ${o.venue}` : ''}` : (o.venue || 'Tickets'), at: o.start_at }));
+    this._findActive('returns').filter(o => o.return_by === todayIso && ['started', 'label_ready'].includes(o.status)).forEach(o => out.push({ kind: 'return', id: o.id, title: o.item, sub: 'Last day to send back' }));
+    this._findActive('renewals').filter(o => o.renews === todayIso).forEach(o => out.push({ kind: 'renewal', id: o.id, title: o.what, sub: 'Renews today' }));
+    this._findActive('council').filter(o => [o.date, o.action_by].includes(todayIso)).forEach(o => out.push({ kind: 'council', id: o.id, title: o.title, sub: o.action_by === todayIso ? 'Deadline today' : (COUNCIL_TOPIC[o.topic] || 'Today') }));
+    for (const k of ['food', 'groceries']) {
+      this._activeOrders(k).filter(o => o.when && o.when <= E).forEach(o => out.push({ kind: k === 'food' ? 'food' : 'grocery', id: o.id, title: this._orderTitle(o),
+        sub: k === 'food' ? (o.method === 'collection' ? 'Ready to collect' : 'Food arriving') : (o.method === 'collection' ? 'Click and collect' : 'Supermarket delivery'), at: o.when }));
+    }
     (s.nudges || []).forEach(n => out.push({ kind: 'followup', id: n.id, title: n.subject || '(No subject)', sub: `Follow up · ${whoShort((n.to || [])[0])}`, ref: n }));
     return out;
   },
 
   _todayHtml() {
     const items = this._todayItems();
-    const icon = { parcel: 'parcel', reminder: 'remind', snoozed: 'snooze', followup: 'followup', appointment: 'appt', bill: 'bill' };
+    const icon = { parcel: 'parcel', reminder: 'remind', snoozed: 'snooze', followup: 'followup', appointment: 'appt', bill: 'bill', food: 'food', grocery: 'basket', travel: 'plane', visit: 'wrench', ticket: 'ticket', return: 'returnBox', renewal: 'renew', council: 'townhall' };
     const rows = items.slice(0, 5).map(x => `<div class="today-row" role="button" data-today="${x.kind}:${esc(x.id)}"><span class="ti ${x.kind}">${ICON[icon[x.kind]] || ''}</span><span class="tt">${esc(x.title)}<small>${esc(x.sub)}</small></span>${x.at ? `<span class="tw">${esc(fmtTime(x.at, this._hass))}</span>` : ''}</div>`).join('');
     return `<div class="today"><div class="today-h">${ICON.today}<span>Today</span>${items.length ? `<em>${items.length}</em>` : ''}</div>
       ${rows || '<div class="today-none">Nothing needs your attention today.</div>'}${items.length > 5 ? `<div class="today-more">and ${items.length - 5} more</div>` : ''}</div>`;
@@ -12218,6 +12267,10 @@ Object.assign(CrowEmailCard.prototype, {
     if (kind === 'parcel') { this._nav('parcels'); return; }
     if (kind === 'appointment') { this._nav('appointments'); return; }
     if (kind === 'bill') { this._nav('bills'); return; }
+    if (kind === 'food') { this._nav('food'); return; }
+    if (kind === 'grocery') { this._nav('groceries'); return; }
+    const fk = { travel: 'travel', visit: 'visits', ticket: 'tickets', return: 'returns', renewal: 'renewals', council: 'council' }[kind];
+    if (fk) { this._nav('finds', { kind: fk }); return; }
     if (kind === 'snoozed') { this._openSnoozed(id); return; }
     if (kind === 'reminder') { this._nav('reader', { account: it.ref.account, folder: it.ref.folder, uid: it.ref.muid }); return; }
     if (kind === 'followup') { if (it.ref.uid) this._nav('reader', { account: it.ref.account, folder: it.ref.folder, uid: it.ref.uid }); else this._nav('followups'); }
@@ -12927,6 +12980,7 @@ class CrowEmailCardEditor extends HTMLElement {
       ${this._toggle('sweep', 'Sweep', 'From any email: delete or archive everything from that sender, keep only the latest, or delete ones over 10 days old. Like Outlook.')}
       <div class="grp-sub">Your Way</div>
       ${this._toggle('custom_swipes', 'Custom Swipes', 'Each person chooses the buttons a swipe shows on each side, and what a long swipe does (in the card’s Settings → Swipes). Like Apple Mail and Outlook.')}
+      ${this._toggle('show_codes', 'Sign-in Codes', 'The latest sign-in or verification code from a new email at the top of the Inbox, with a Copy button, for 10 minutes. Found without AI, never saved and never shown in sensors or events.')}
       ${this._toggle('show_today', 'Today', 'A Today panel at the top of the Mailboxes: parcels arriving, reminders due, snoozed emails coming back and follow-ups. Each account also has a Needs Attention Today sensor for automations.')}
       <div class="desc" style="margin-top:10px">Keyboard shortcuts (j, k, e, #, r, c…) are always on with a keyboard: press ? in the card to see them.</div>`;
     const list = `
@@ -12935,7 +12989,7 @@ class CrowEmailCardEditor extends HTMLElement {
       <div class="grp-sub">Each Email</div>
       ${this._seg('preview_lines', 'Preview', 'Lines of each email shown in the list.', [['0', 'None'], ['1', '1 Line'], ['2', '2 Lines'], ['3', '3 Lines'], ['5', '5 Lines']])}
       ${this._toggle('show_avatars', 'Show Contact Photos', 'Initials in a coloured circle next to each email.')}
-      ${this._toggle('inbox_groups', 'Group the Inbox by Type', 'The Inbox in sections, like the Spark skin: People, Notifications, Shopping, Social and Newsletters. Each person can turn it on or off for themselves in the Inbox’s ⋯ menu.')}
+      ${this._toggle('inbox_groups', 'Group the Inbox by Type', 'The Inbox in sections, like the Spark skin: People, Notifications, Council and Local, Shopping, Social and Newsletters. Each person can turn it on or off for themselves in the Inbox’s ⋯ menu.')}
       ${this._toggle('show_parcels_inbox', 'Parcels in the Inbox', 'A strip at the top of the Inbox with parcels on their way. Tap it to see them all. Needs the Parcel Tracker (under AI).')}
       <div class="grp-sub">Swipes and Deleting</div>
       ${this._seg('swipe_action', 'Swipe Left to', 'A long swipe to the left on an email.', [['archive', 'Archive'], ['trash', 'Delete']])}
@@ -12997,6 +13051,15 @@ class CrowEmailCardEditor extends HTMLElement {
         ${this._toggle('ai_notify', 'Smart Notifications', 'Lets people choose “Important Email” notifications in their account settings: the AI decides which new email is worth a notification.')}
         ${this._toggle('ai_categories', 'Smart Categories', 'Sorts the Inbox into Primary, Transactions, Updates and Promotions.')}
         ${this._toggle('ai_parcels', 'Parcel Tracker', 'Finds deliveries in email: a Parcels mailbox and a Parcels sensor for each account.')}
+        ${this._toggle('ai_food', 'Food Orders', 'Finds takeaway and restaurant orders in new email: a Food Orders mailbox with when each should arrive, a Food Order in Progress binary sensor, a Food Arriving sensor and a monthly spend sensor. They leave Parcels.')}
+        ${this._toggle('ai_groceries', 'Supermarket Deliveries', 'Finds supermarket deliveries and click and collect in new email: a Supermarket Deliveries mailbox with each slot, substitutions and missing items, a Supermarket Delivery Coming binary sensor, a Next Supermarket Delivery sensor and a monthly spend sensor. They leave Parcels.')}
+        ${this._toggle('ai_travel', 'Travel', 'Flights, trains, ferries, hotels and car hire in a Travel mailbox, grouped into trips, with check-in times, delays and gate changes. Sensors: Next Travel, plus Away on a Trip and Travel Disruption binary sensors.')}
+        ${this._toggle('ai_visits', 'Home Visits', 'Engineers, services, installs and big deliveries coming to your home, with their time window. Sensors: Next Home Visit, plus Home Visit Today and Home Visit Now binary sensors.')}
+        ${this._toggle('ai_tickets', 'Tickets', 'Concerts, matches, shows and the cinema, with doors, seats and Show Ticket. Sensor: Next Event.')}
+        ${this._toggle('ai_returns', 'Returns and Refunds', 'Things you’re sending back, with the last day to return them and refunds to come. Sensors: Refunds Owed and Return Deadline.')}
+        ${this._toggle('ai_renewals', 'Renewals', 'Insurance, MOT, TV licence, contracts and memberships that renew or run out, with last year’s price to compare. Sensors: Next Renewal, plus a Renewal Due Soon binary sensor.')}
+        ${this._toggle('ai_council', 'Council and Local', 'Bin collection changes, council tax, school news, road works and consultations. Sensor: Council Updates (with the next bin change). A crow_email_council event for automations.')}
+        ${this._toggle('ai_receipts', 'Receipts', 'Receipts for things worth keeping, with warranties and a search. Sensor: Warranties Ending Soon.')}
         ${this._toggle('ai_appointments', 'Appointments', 'Finds bookings and appointments in new email: an Appointments mailbox with Add to Calendar, and they show in Today.')}
         ${this._toggle('ai_bills', 'Bills', 'Finds bills in new email: a Bills mailbox with amounts and due dates, a reminder a few days before, a warning when one’s much higher than last time, and a Bills Due This Week sensor.')}
         <div class="field" id="parcel-keep-row"><label for="parcel_keep">Remove Parcels After</label>
@@ -13016,9 +13079,9 @@ class CrowEmailCardEditor extends HTMLElement {
       ${saved}` : adminOnly;
     const auto = `
       <div class="grp-sub">Sensors</div>
-      <div class="desc" style="font-size:12px;line-height:1.55">Each email account gets a device with <b>Unread</b>, <b>Unread VIP</b>, <b>Latest Email</b>, <b>Received Today</b>, <b>Flagged</b>, <b>Drafts and Scheduled</b>, <b>Junk</b>, <b>Mailbox Usage</b> and <b>Last Checked</b>, plus <b>Connected</b> and <b>New Mail</b> binary sensors. With App Icon Badge, an <b>App Badge</b> sensor; with the Parcel Tracker, <b>Parcels</b>.</div>
+      <div class="desc" style="font-size:12px;line-height:1.55">Each email account gets a device with <b>Unread</b>, <b>Unread VIP</b>, <b>Latest Email</b>, <b>Received Today</b>, <b>Flagged</b>, <b>Drafts and Scheduled</b>, <b>Junk</b>, <b>Mailbox Usage</b> and <b>Last Checked</b>, plus <b>Connected</b> and <b>New Mail</b> binary sensors. With App Icon Badge, an <b>App Badge</b> sensor; with the Parcel Tracker, <b>Parcels</b>; with Food Orders, <b>Food Arriving</b>, <b>Food Order Spend This Month</b> and a <b>Food Order in Progress</b> binary sensor; with Supermarket Deliveries, <b>Next Supermarket Delivery</b>, <b>Supermarket Spend This Month</b> and a <b>Supermarket Delivery Coming</b> binary sensor; with Travel, <b>Next Travel</b>, <b>Away on a Trip</b> and <b>Travel Disruption</b>; with Home Visits, <b>Next Home Visit</b>, <b>Home Visit Today</b> and <b>Home Visit Now</b>; with Tickets, <b>Next Event</b>; with Returns and Refunds, <b>Refunds Owed</b> and <b>Return Deadline</b>; with Renewals, <b>Next Renewal</b> and <b>Renewal Due Soon</b>; with Council and Local, <b>Council Updates</b>; with Receipts, <b>Warranties Ending Soon</b>.</div>
       <div class="grp-sub">Events</div>
-      <div class="desc" style="font-size:12px;line-height:1.55"><code>crow_email_received</code>, <code>crow_email_sent</code>, <code>crow_email_rule_matched</code>, <code>crow_email_blocked</code>, <code>crow_email_action</code> (buttons in emails from automations) and <code>crow_email_vote</code>. With AI features: <code>crow_email_details</code>, <code>crow_email_parcel</code> and <code>crow_email_follow_up</code>.</div>
+      <div class="desc" style="font-size:12px;line-height:1.55"><code>crow_email_received</code>, <code>crow_email_sent</code>, <code>crow_email_rule_matched</code>, <code>crow_email_blocked</code>, <code>crow_email_action</code> (buttons in emails from automations) and <code>crow_email_vote</code>. With AI features: <code>crow_email_details</code>, <code>crow_email_parcel</code>, <code>crow_email_food</code>, <code>crow_email_grocery</code>, <code>crow_email_travel</code>, <code>crow_email_visit</code>, <code>crow_email_ticket</code>, <code>crow_email_return</code>, <code>crow_email_renewal</code>, <code>crow_email_council</code>, <code>crow_email_receipt</code> and <code>crow_email_follow_up</code>.</div>
       <div class="grp-sub">Actions</div>
       <div class="desc" style="font-size:12px;line-height:1.55"><code>crow_email.send_email</code>, <code>mark_as_read</code>, <code>archive</code>, <code>move_to_folder</code>, <code>flag</code>, <code>refresh</code> and <code>update_badge</code>.</div>
       <div class="grp-sub">Privacy</div>
@@ -13058,7 +13121,7 @@ class CrowEmailCardEditor extends HTMLElement {
     radio('appearance', c.appearance); radio('style', c.style); radio('start_mailbox', c.start_mailbox);
     radio('preview_lines', String(c.preview_lines)); radio('swipe_action', c.swipe_action); radio('wide_layout', c.wide_layout); radio('track_site', c.track_site || '17track');
     const ds = r.getElementById('default_skin'); if (ds) ds.value = c.default_skin || 'iphone';
-    ['use_ha_theme', 'animations', 'show_avatars', 'inbox_groups', 'show_parcels_inbox', 'confirm_delete', 'confirm_archive', 'date_links', 'snooze', 'mute', 'screener', 'subscriptions', 'sweep', 'custom_swipes', 'show_today'].forEach(k => { const el = r.getElementById(k); if (el) el.checked = c[k] !== false && !!c[k]; });
+    ['use_ha_theme', 'animations', 'show_avatars', 'inbox_groups', 'show_parcels_inbox', 'confirm_delete', 'confirm_archive', 'date_links', 'snooze', 'mute', 'screener', 'subscriptions', 'sweep', 'custom_swipes', 'show_today', 'show_codes'].forEach(k => { const el = r.getElementById(k); if (el) el.checked = c[k] !== false && !!c[k]; });
     { const fb = r.getElementById('fullscreen_button'); if (fb) fb.checked = c.fullscreen_button !== false; }
     { const sp = r.getElementById('resize_btn_spin'); if (sp) sp.checked = c.resize_btn_spin !== false; }
     { const sf = r.getElementById('start_full'); if (sf) sf.checked = c.start_full === true; }
@@ -13080,7 +13143,7 @@ class CrowEmailCardEditor extends HTMLElement {
     r.getElementById('default_skin')?.addEventListener('change', (e) => this._set('default_skin', e.target.value));
     ['appearance', 'style', 'start_mailbox', 'swipe_action', 'wide_layout', 'track_site'].forEach(n => r.querySelectorAll(`input[name="${n}"]`).forEach(i => i.addEventListener('change', () => this._set(n, i.value))));
     r.querySelectorAll('input[name="preview_lines"]').forEach(i => i.addEventListener('change', () => this._set('preview_lines', parseInt(i.value, 10))));
-    ['use_ha_theme', 'animations', 'show_avatars', 'inbox_groups', 'show_parcels_inbox', 'confirm_delete', 'confirm_archive', 'date_links', 'snooze', 'mute', 'screener', 'subscriptions', 'sweep', 'custom_swipes', 'show_today'].forEach(k => r.getElementById(k)?.addEventListener('change', (e) => this._set(k, e.target.checked)));
+    ['use_ha_theme', 'animations', 'show_avatars', 'inbox_groups', 'show_parcels_inbox', 'confirm_delete', 'confirm_archive', 'date_links', 'snooze', 'mute', 'screener', 'subscriptions', 'sweep', 'custom_swipes', 'show_today', 'show_codes'].forEach(k => r.getElementById(k)?.addEventListener('change', (e) => this._set(k, e.target.checked)));
     ['fullscreen_button', 'resize_btn_spin', 'start_full'].forEach(k => r.getElementById(k)?.addEventListener('change', (e) => { this._set(k, e.target.checked); if (k === 'fullscreen_button') setTimeout(() => this.updateUI(), 0); }));
     r.querySelectorAll('select[data-pcal]').forEach(sel => sel.addEventListener('change', () => {
       const next = { ...(this._config.date_calendars || {}) };
@@ -13175,6 +13238,499 @@ class CrowEmailCardEditor extends HTMLElement {
 // Home Assistant can swap in a new custom element registry while it starts up, and a card
 // defined before that happens isn't found (the card picker then spins forever). So the card
 // checks again over the first few seconds, and defines itself in whichever registry is current.
+// ── Food Orders and Supermarket Deliveries: found in new email by the AI, each with its own page ──
+Object.assign(ICON, {
+  food: _s('<path d="M7 3v8M4.5 3v5a2.5 2.5 0 005 0V3M7 11v10"/><path d="M17.5 21V3c-2.2 1.4-3.5 4-3.5 7.5V13h3.5"/>'),
+  basket: _s('<path d="M3.5 9.5h17l-1.6 9.1a2 2 0 01-2 1.7H7.1a2 2 0 01-2-1.7z"/><path d="M8 9.5l3-6M16 9.5l-3-6M9 13.5v3.5M12 13.5v3.5M15 13.5v3.5"/>'),
+});
+const ORDER_DONE = ['delivered', 'collected', 'cancelled'];
+const ORDER_STATUS = {
+  food: {
+    ordered: ['Ordered', 'var(--ce-text2)', 1], preparing: ['Preparing', 'var(--ce-orange)', 2], on_its_way: ['On Its Way', 'var(--ce-accent)', 3],
+    ready: ['Ready to Collect', 'var(--ce-orange)', 3], delivered: ['Delivered', 'var(--ce-green)', 4], collected: ['Collected', 'var(--ce-green)', 4], cancelled: ['Cancelled', 'var(--ce-red)', 0],
+  },
+  groceries: {
+    booked: ['Booked', 'var(--ce-text2)', 1], picking: ['Being Packed', 'var(--ce-orange)', 2], on_its_way: ['On Its Way', 'var(--ce-accent)', 3],
+    ready: ['Ready to Collect', 'var(--ce-orange)', 3], delivered: ['Delivered', 'var(--ce-green)', 4], collected: ['Collected', 'var(--ce-green)', 4], cancelled: ['Cancelled', 'var(--ce-red)', 0],
+  },
+};
+const ORDER_KIND = {
+  food: {
+    title: 'Food Orders', one: 'Food order', icon: 'food', color: '#FF6B35', soon: 'On the Way', done: 'Earlier',
+    empty: 'When an email confirms a takeaway or restaurant order, it appears here with when it should arrive.',
+    off: 'Food Orders are turned off. An administrator can turn them on in the card editor.',
+    foot: 'Found in your email by AI, so details can be wrong. An order counts as delivered an hour after it was due if no email says otherwise, and leaves a few hours later.',
+  },
+  groceries: {
+    title: 'Supermarket Deliveries', one: 'Supermarket delivery', icon: 'basket', color: '#30B0C7', soon: 'Coming Up', done: 'Delivered',
+    empty: 'When an email confirms a supermarket delivery or click and collect, it appears here with its slot, substitutions and missing items.',
+    off: 'Supermarket Deliveries are turned off. An administrator can turn them on in the card editor.',
+    foot: 'Found in your email by AI, so details can be wrong. A delivery counts as delivered two hours after its slot if no email says otherwise, and leaves two days later.',
+  },
+};
+
+const ORDERS_CSS = `
+.mrow .mi.food { color: #FF6B35; }
+.mrow .mi.grocery { color: #30B0C7; }
+.today-row .ti.food { background: #FF6B35; } .today-row .ti.grocery { background: #30B0C7; }
+.ord-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.ord-tags .ot { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 9px; background: var(--ce-fill); color: var(--ce-text2); }
+.ord-tags .ot.sub { color: var(--ce-orange); background: color-mix(in srgb, var(--ce-orange) 15%, transparent); }
+.ord-tags .ot.miss { color: var(--ce-red); background: color-mix(in srgb, var(--ce-red) 14%, transparent); }
+.ord-tags .ot.edit { color: var(--ce-accent); background: color-mix(in srgb, var(--ce-accent) 14%, transparent); }
+.pc-row.cancelled .pc-main b { text-decoration: line-through; opacity: 0.6; }
+.ord-list { margin: 0 0 14px; padding: 0; list-style: none; }
+.ord-list li { padding: 9px 0; border-bottom: 0.5px solid var(--ce-sep); font-size: 15px; line-height: 1.35; user-select: text; -webkit-user-select: text; }
+.ord-list li:last-child { border-bottom: 0; }
+.ord-h { font-size: 13px; font-weight: 600; color: var(--ce-text2); text-transform: uppercase; letter-spacing: 0.02em; margin: 6px 0 2px; }
+`;
+
+Object.assign(CrowEmailCard.prototype, {
+  _activeOrders(kind) { return (this._s[kind] || []).filter(o => !ORDER_DONE.includes(o.status)); },
+  _ordersOn(kind) { return !!(this._s.ai?.[kind] || (this._s[kind] || []).length); },
+  // "Today", "Tomorrow" or "Sat 24 Oct"
+  _orderDay(ms) {
+    const d = this._daysUntil(ms);
+    if (d === 0 && ms >= new Date().setHours(0, 0, 0, 0)) return 'Today';
+    if (d === 1) return 'Tomorrow';
+    const other = new Date(ms).getFullYear() !== new Date().getFullYear() && Math.abs(ms - Date.now()) > 60 * 86400000;
+    return new Date(ms).toLocaleDateString(locale(this._hass), other ? { day: 'numeric', month: 'short', year: 'numeric' } : { weekday: 'short', day: 'numeric', month: 'short' });
+  },
+  // food: when it should arrive (or be ready); a supermarket delivery: its slot
+  _orderWhen(o) {
+    const t = (ms) => fmtTime(ms, this._hass), coll = o.method === 'collection';
+    if (o.kind === 'food') {
+      if (o.status === 'cancelled') return '';
+      if (ORDER_DONE.includes(o.status)) return o.probable ? `Due ${t(o.when)}` : '';
+      if (!o.arrive_at) return 'No time given';
+      const day = this._orderDay(o.arrive_at);
+      return `${coll ? 'Ready' : 'Arriving'} about ${day === 'Today' ? '' : `${day} `}${t(o.arrive_at)}`;
+    }
+    if (!o.slot_start_at) return coll ? 'Click and collect' : '';
+    const range = o.slot_end_at && o.slot_end_at !== o.slot_start_at ? `${t(o.slot_start_at)}–${t(o.slot_end_at)}` : t(o.slot_start_at);
+    return `${this._orderDay(o.slot_start_at)} ${range}${coll ? ' · Collect' : ''}`;
+  },
+  _orderTitle(o) { return (o.kind === 'food' ? o.restaurant : o.shop) || o.subject || ORDER_KIND[o.kind].one; },
+  async _openOrderEmail(kind, o) {
+    const slow = setTimeout(() => this._toast('Finding the email…'), 600);
+    try {
+      const at = await ceQuick(this._call('orders/locate', { account: o.account, kind, item: o.id }), 20000, { folder: o.folder || 'INBOX', uid: o.uid });
+      clearTimeout(slow); this._root.querySelector('.toast')?.remove();
+      this._nav('reader', { account: o.account, folder: at.folder, uid: at.uid });
+    } catch (err) {
+      clearTimeout(slow);
+      this._toast(err?.message || 'Couldn’t find the email.');
+    }
+  },
+  // Add to Food Orders / Supermarket Deliveries, from an email's ⋯ menu
+  async _addOrderFrom(kind, it) {
+    this._toast('Reading the email…');
+    try {
+      this._s[kind] = await this._call('orders/add', { account: it.account, folder: it.folder, uid: it.uid, kind });
+      this._refresh(kind);
+      this._toast(`Added to ${ORDER_KIND[kind].title}`, () => this._nav(kind), 'Show');
+    } catch (err) { this._err(err); }
+  },
+  _orderMenuItems() {
+    const out = [];
+    if (this._s.ai?.food) out.push({ text: 'Food Orders', value: 'addorder:food', icon: 'food' });
+    if (this._s.ai?.groceries) out.push({ text: 'Supermarket Deliveries', value: 'addorder:groceries', icon: 'basket' });
+    return out;
+  },
+
+  _pg_food() { return this._ordersPage('food'); },
+  _pg_groceries() { return this._ordersPage('groceries'); },
+  _ordersPage(kind) {
+    const K = ORDER_KIND[kind];
+    const el = this._simplePage(K.title, '<div class="pc-body"></div>');
+    this._scrollTitle(el);
+    const body = el.querySelector('.pc-body');
+    const money = (o) => (o.total != null ? this._money({ amount: o.total, currency: o.currency || 'GBP' }) : '');
+    const row = (o, i) => {
+      let [label, c, step] = ORDER_STATUS[kind][o.status] || ORDER_STATUS[kind][kind === 'food' ? 'ordered' : 'booked'];
+      if (o.probable) label = o.status === 'collected' ? 'Probably Collected' : 'Probably Delivered';
+      const by = kind === 'food' ? (o.service && o.service.toLowerCase() !== (o.restaurant || '').toLowerCase() ? o.service : '') : '';
+      const sub = [this._orderWhen(o), by, money(o)].filter(Boolean).join(' · ');
+      const tags = [];
+      if (kind === 'groceries') {
+        if ((o.substitutions || []).length) tags.push(`<span class="ot sub">${o.substitutions.length} substitution${o.substitutions.length === 1 ? '' : 's'}</span>`);
+        if ((o.missing || []).length) tags.push(`<span class="ot miss">${o.missing.length} missing</span>`);
+        if (o.edit_by_at && o.edit_by_at > Date.now() && !ORDER_DONE.includes(o.status)) tags.push(`<span class="ot edit">Change by ${esc(this._orderDay(o.edit_by_at))} ${esc(fmtTime(o.edit_by_at, this._hass))}</span>`);
+      }
+      return `<div class="pc-row${o.status === 'cancelled' ? ' cancelled' : ''}" role="button" data-o="${i}" style="--c:${c}"><span class="pc-ic" style="background:${K.color}">${ICON[K.icon]}</span>
+        <div class="pc-main"><div class="pc-l1"><b>${esc(this._orderTitle(o))}</b><span class="pc-st">${esc(label)}</span></div>${sub ? `<span>${esc(sub)}</span>` : ''}
+        ${step ? `<div class="pc-bar">${[1, 2, 3, 4].map(n => `<i class="${n <= step ? 'on' : ''}"></i>`).join('')}</div>` : ''}${tags.length ? `<div class="ord-tags">${tags.join('')}</div>` : ''}</div>
+        <button class="pc-more" data-om="${i}" aria-label="More">${ICON.more}</button></div>`;
+    };
+    const draw = () => {
+      const list = this._s[kind] || [];
+      const act = list.map((o, i) => [o, i]).filter(([o]) => !ORDER_DONE.includes(o.status));
+      const done = list.map((o, i) => [o, i]).filter(([o]) => ORDER_DONE.includes(o.status));
+      body.innerHTML = !list.length
+        ? `<div class="empty"><b>No ${esc(K.title)}</b>${this._s.ai?.[kind] ? K.empty : K.off}</div>`
+        : `${act.length ? `<div class="sh">${K.soon}</div><div class="sgroup">${act.map(([o, i]) => row(o, i)).join('')}</div>` : ''}
+           ${done.length ? `<div class="sh"${act.length ? ' style="margin-top:20px"' : ''}>${K.done}</div><div class="sgroup">${done.map(([o, i]) => row(o, i)).join('')}</div>` : ''}
+           <div class="sfoot">${K.foot}</div>`;
+    };
+    const details = (o) => {
+      const li = (arr) => `<ul class="ord-list">${arr.map(x => `<li>${esc(x)}</li>`).join('')}</ul>`;
+      this._sheet({
+        title: this._orderTitle(o), cancel: 'Close',
+        body: `${(o.substitutions || []).length ? `<div class="ord-h">Substitutions</div>${li(o.substitutions)}` : ''}${(o.missing || []).length ? `<div class="ord-h">Missing</div>${li(o.missing)}` : ''}`,
+      });
+    };
+    const menuItems = (o) => {
+      const done = ORDER_DONE.includes(o.status), coll = o.method === 'collection';
+      return [
+        { header: [this._orderTitle(o), money(o)].filter(Boolean).join(' · ') },
+        ...(kind === 'groceries' && ((o.substitutions || []).length || (o.missing || []).length) ? [{ text: 'Substitutions and Missing Items', value: 'details', icon: 'list' }] : []),
+        { text: 'Show Email', value: 'email', icon: 'mail' },
+        ...(kind === 'groceries' && o.slot_start && !done ? [{ text: 'Add to Calendar', value: 'calendar', icon: 'calendar' }] : []),
+        { sep: true },
+        ...(o.status === 'cancelled' ? [] : done ? [{ text: coll ? 'Not Collected Yet' : 'Not Delivered Yet', value: 'undelivered', icon: 'undo' }]
+          : [{ text: coll ? 'Mark as Collected' : 'Mark as Delivered', value: 'delivered', icon: 'check' }]),
+        { text: 'Delete', value: 'delete', icon: 'trash', red: true },
+      ];
+    };
+    const act = async (o, v) => {
+      if (!o || !v) return;
+      if (v === 'details') { details(o); return; }
+      if (v === 'email') { this._openOrderEmail(kind, o); return; }
+      if (v === 'calendar') { this._addFound({ kind: 'event', title: `${o.shop || 'Supermarket'} ${o.method === 'collection' ? 'collection' : 'delivery'}`, start: o.slot_start, end: o.slot_end || '', location: '' }); return; }
+      try {
+        this._s[kind] = await this._call('orders/action', { account: o.account, kind, item: o.id, action: v === 'delete' ? 'remove' : v });
+        this._refresh(kind);
+        if (v === 'delete') {
+          this._toast(`${K.one} deleted`, async () => {
+            try { this._s[kind] = await this._call('orders/action', { account: o.account, kind, item: o.id, action: 'restore' }); this._refresh(kind); } catch (err) { this._err(err); }
+          });
+        }
+      } catch (err) { this._err(err); }
+    };
+    el.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-a="back"]')) { this._back(); return; }
+      const list = this._s[kind] || [];
+      const r = e.target.closest('[data-om],[data-o]');
+      if (!r) return;
+      const o = list[+(r.dataset.om ?? r.dataset.o)];
+      if (!o) return;
+      // tapping a delivery with substitutions shows them; otherwise the menu
+      if (!r.dataset.om && kind === 'groceries' && ((o.substitutions || []).length || (o.missing || []).length)) { details(o); return; }
+      act(o, await this._menu(r, menuItems(o)));
+    });
+    el.addEventListener('contextmenu', async (e) => {
+      const r = e.target.closest('[data-o]');
+      if (!r) return;
+      e.preventDefault();
+      const o = (this._s[kind] || [])[+r.dataset.o];
+      if (o) act(o, await this._menu(r, menuItems(o)));
+    });
+    draw();
+    // the times ("Arriving about…") and Probably Delivered move on with the clock
+    const timer = setInterval(() => { if (el.isConnected) draw(); else clearInterval(timer); }, 60000);
+    return { el, refresh: (what) => { if (['all', kind, 'settings', 'back'].includes(what)) draw(); }, onHide: () => {} };
+  },
+});
+
+// ── Travel, Returns and Refunds, Renewals, Home Visits, Tickets, Council and Local, Receipts:
+//    found in new email by the AI, each with a page of its own; and sign-in codes ──
+Object.assign(ICON, {
+  plane: _s('<path d="M10.5 13.5L3 11l1.5-1.5 7.5.8 4.7-4.7a1.8 1.8 0 012.6 2.6L14.6 13l.8 7.5L14 22l-2.5-7.5"/><path d="M6.5 17.5l-2 .5.5-2"/>'),
+  returnBox: _s('<path d="M12 3l8 4.5v9L12 21l-8-4.5v-9z"/><path d="M4 7.5l8 4.5 8-4.5M12 12v9"/><path d="M9.5 9.5l-2 1.6 2 1.6"/>'),
+  renew: _s('<path d="M20 11a8 8 0 00-14.3-4.9L4 8"/><path d="M4 4v4h4"/><path d="M4 13a8 8 0 0014.3 4.9L20 16"/><path d="M20 20v-4h-4"/>'),
+  wrench: _s('<path d="M14.7 6.3a4 4 0 00-5.4 5.2L3.5 17.3a1.8 1.8 0 002.5 2.5l5.8-5.8a4 4 0 005.2-5.4l-2.6 2.6-2.4-.4-.4-2.4z"/>'),
+  ticket: _s('<path d="M3.5 8.5V6.5a1 1 0 011-1h15a1 1 0 011 1v2a2.5 2.5 0 000 5v2a1 1 0 01-1 1h-15a1 1 0 01-1-1v-2a2.5 2.5 0 000-5z"/><path d="M14.5 5.5v13" stroke-dasharray="2 2"/>'),
+  townhall: _s('<path d="M3 21h18M4.5 21V10M19.5 21V10M3 10h18L12 3.5z"/><path d="M8.5 21v-7M12 21v-7M15.5 21v-7"/>'),
+  receipt: _s('<path d="M6 3h12v18l-2-1.4-2 1.4-2-1.4-2 1.4-2-1.4L6 21z"/><path d="M9 8h6M9 11.5h6M9 15h4"/>'),
+  key: _s('<circle cx="8" cy="15" r="4"/><path d="M11 12l8.5-8.5M16.5 6.5l2 2M14.5 8.5l1.5 1.5"/>'),
+});
+const FIND_ORDER = ['travel', 'visits', 'tickets', 'returns', 'renewals', 'council', 'receipts'];
+const FIND_KIND = {
+  travel: { title: 'Travel', icon: 'plane', color: '#0A84FF', today: 'travel',
+    empty: 'When an email confirms a flight, train, ferry, hotel or car hire, it appears here, grouped into trips, with check-in times, delays and gate changes.',
+    foot: 'Found in your email by AI, so details can be wrong. Always check times with the airline or operator. Bookings leave two days after they end.' },
+  returns: { title: 'Returns and Refunds', icon: 'returnBox', color: '#AF52DE',
+    empty: 'When an email is about sending something back, it appears here with the last day to return it and the refund to come.',
+    foot: 'Found in your email by AI, so details can be wrong. Refunded returns leave after two weeks.' },
+  renewals: { title: 'Renewals', icon: 'renew', color: '#FF9500',
+    empty: 'Insurance, MOT, TV licence, contracts and memberships appear here when an email says they renew or run out, with last year’s price to compare.',
+    foot: 'Found in your email by AI, so details can be wrong. Mark one as renewed (or cancelled) when it’s sorted.' },
+  visits: { title: 'Home Visits', icon: 'wrench', color: '#5856D6', today: 'visit',
+    empty: 'When an engineer, a service or a big delivery is booked to come to your home, it appears here with its time window.',
+    foot: 'Found in your email by AI, so details can be wrong. Visits leave a day after their window.' },
+  tickets: { title: 'Tickets', icon: 'ticket', color: '#FF2D55', today: 'ticket',
+    empty: 'Concerts, matches, shows and the cinema appear here when your tickets arrive by email, with doors and seats.',
+    foot: 'Found in your email by AI, so details can be wrong. Show Ticket opens the email the tickets came in.' },
+  council: { title: 'Council and Local', icon: 'townhall', color: '#64D2FF',
+    empty: 'Bin collection changes, council tax, school news, road works and consultations appear here.',
+    foot: 'Found in your email by AI, so details can be wrong. Updates leave a few days after their date.' },
+  receipts: { title: 'Receipts', icon: 'receipt', color: '#00C7BE',
+    empty: 'Receipts for things worth keeping (electronics, appliances, furniture, anything with a warranty) appear here.',
+    foot: 'Found in your email by AI, so details can be wrong. Receipts stay until a month after their warranty ends, or two years.' },
+};
+const FIND_STATUS = {
+  travel: { booked: ['Booked', 'var(--ce-text2)'], changed: ['Changed', 'var(--ce-orange)'], delayed: ['Delayed', 'var(--ce-red)'], cancelled: ['Cancelled', 'var(--ce-red)'] },
+  returns: { started: ['Started', 'var(--ce-text2)'], label_ready: ['Label Ready', 'var(--ce-accent)'], sent: ['Sent', 'var(--ce-accent)'], received: ['Received', 'var(--ce-orange)'], refunded: ['Refunded', 'var(--ce-green)'], rejected: ['Rejected', 'var(--ce-red)'] },
+  renewals: { upcoming: ['Upcoming', 'var(--ce-text2)'], renewed: ['Renewed', 'var(--ce-green)'], cancelled: ['Cancelled', 'var(--ce-text2)'] },
+  visits: { booked: ['Booked', 'var(--ce-text2)'], changed: ['Changed', 'var(--ce-orange)'], on_the_way: ['On the Way', 'var(--ce-accent)'], done: ['Done', 'var(--ce-green)'], cancelled: ['Cancelled', 'var(--ce-red)'] },
+  tickets: { booked: ['Booked', 'var(--ce-text2)'], changed: ['Changed', 'var(--ce-orange)'], cancelled: ['Cancelled', 'var(--ce-red)'] },
+  council: {},
+  receipts: {},
+};
+const FIND_DONE = { travel: ['cancelled'], returns: ['refunded', 'rejected'], renewals: ['renewed', 'cancelled'], visits: ['done', 'cancelled'], tickets: ['cancelled'], council: [], receipts: [] };
+const COUNCIL_TOPIC = { bins: 'Bins', council_tax: 'Council Tax', school: 'School', roads: 'Roads', consultation: 'Consultation', other: 'Local' };
+
+const FINDS_CSS = `
+.mrow .mi.f-travel { color: #0A84FF; } .mrow .mi.f-returns { color: #AF52DE; } .mrow .mi.f-renewals { color: #FF9500; }
+.mrow .mi.f-visits { color: #5856D6; } .mrow .mi.f-tickets { color: #FF2D55; } .mrow .mi.f-council { color: #64D2FF; } .mrow .mi.f-receipts { color: #00C7BE; }
+.today-row .ti.travel { background: #0A84FF; } .today-row .ti.visit { background: #5856D6; } .today-row .ti.ticket { background: #FF2D55; }
+.today-row .ti.return { background: #AF52DE; } .today-row .ti.renewal { background: #FF9500; } .today-row .ti.council { background: #64D2FF; }
+.fd-detail { display: block; font-size: 13px; color: var(--ce-text2); margin-top: 3px; white-space: normal !important; line-height: 1.3; }
+.ord-tags .ot.warn { color: var(--ce-orange); background: color-mix(in srgb, var(--ce-orange) 15%, transparent); }
+.ord-tags .ot.bad { color: var(--ce-red); background: color-mix(in srgb, var(--ce-red) 14%, transparent); }
+.ord-tags .ot.good { color: var(--ce-green); background: color-mix(in srgb, var(--ce-green) 15%, transparent); }
+.fd-search { margin: 0 0 12px; }
+.fd-search input { width: 100%; height: 38px; border-radius: 12px; border: 0; background: var(--ce-fill); padding: 0 12px; font-size: 16px; color: var(--ce-text); outline: none; user-select: text; -webkit-user-select: text; }
+.code-strip { margin: 0 16px 12px; padding: 10px 12px; border-radius: 16px; display: flex; align-items: center; gap: 12px; background: var(--ce-fill); }
+:host([data-mode="light"]) .code-strip { background: var(--ce-bg2); }
+.code-strip .pc-ic { width: 34px; height: 34px; border-radius: 10px; background: #34C759; }
+.code-strip .cs-main { flex: 1; min-width: 0; }
+.code-strip .cs-code { font-size: 22px; font-weight: 700; letter-spacing: 0.12em; font-variant-numeric: tabular-nums; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; user-select: text; -webkit-user-select: text; }
+.code-strip .cs-sub { display: block; font-size: 12.5px; color: var(--ce-text2); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.code-strip button.cs-copy { height: 32px; padding: 0 14px; border-radius: 16px; background: var(--ce-accent); color: #fff; font-weight: 600; font-size: 14px; }
+.code-strip button.cs-x { width: 28px; height: 28px; color: var(--ce-text2); display: flex; align-items: center; justify-content: center; }
+.code-strip button.cs-x svg { width: 14px; height: 14px; }
+`;
+
+Object.assign(CrowEmailCard.prototype, {
+  _finds(kind) { return (this._s.finds || {})[kind] || []; },
+  _findDone(kind, o) { return FIND_DONE[kind].includes(o.status); },
+  _findActive(kind) {
+    const now = Date.now();
+    return this._finds(kind).filter(o => {
+      if (this._findDone(kind, o)) return false;
+      if (['travel', 'visits', 'tickets'].includes(kind) && o.start_at) return (o.end_at || o.start_at + (kind === 'travel' ? 3600000 : 4 * 3600000)) >= now;
+      return true;
+    });
+  },
+  _findShown(kind) { return this._finds(kind).length > 0; },
+  _findCount(kind) {
+    if (kind === 'receipts') return this._findActive(kind).filter(o => o.warranty_until_at && o.warranty_until_at - Date.now() < 90 * 86400000 && o.warranty_until_at > Date.now()).length;
+    if (kind === 'council') return this._findActive(kind).length;
+    return this._findActive(kind).length;
+  },
+  _dayTime(ms, withTime = true) { return ms ? `${this._orderDay(ms)}${withTime ? ` ${fmtTime(ms, this._hass)}` : ''}` : ''; },
+  _isoDay(iso) { return iso ? this._orderDay(new Date(`${iso.slice(0, 10)}T12:00`).getTime()) : ''; },
+  _daysTo(iso) { const a = new Date(); a.setHours(0, 0, 0, 0); return Math.round((new Date(`${iso.slice(0, 10)}T00:00`) - a) / 86400000); },
+  _findTitle(kind, o) {
+    return ({ travel: o.title || o.provider, returns: o.item, renewals: o.what, visits: o.what, tickets: o.event, council: o.title, receipts: o.item })[kind] || o.subject || FIND_KIND[kind].title;
+  },
+  // one row's words: [title, sub line, [label, colour] or null, tags, detail]
+  _findRow(kind, o) {
+    const money = (v, c) => (v != null ? this._money({ amount: v, currency: c || 'GBP' }) : '');
+    const t = (ms) => (ms ? fmtTime(ms, this._hass) : '');
+    const st = FIND_STATUS[kind][o.status];
+    const tags = [];
+    let sub = '', pill = st || null, detail = '';
+    if (kind === 'travel') {
+      const span = o.start_at ? `${this._dayTime(o.start_at)}${o.end_at && o.type !== 'hotel' ? ` → ${t(o.end_at)}` : ''}${o.end_at && o.type === 'hotel' ? ` to ${this._dayTime(o.end_at, false)}` : ''}` : '';
+      sub = [span, o.number, o.from && o.to ? `${o.from} → ${o.to}` : ''].filter(Boolean).join(' · ');
+      if (o.status === 'delayed' && o.delay_minutes) pill = [`Delayed ${o.delay_minutes} min`, 'var(--ce-red)'];
+      if (o.checkin_opens_at && o.start_at > Date.now()) tags.push(o.checkin_opens_at > Date.now() ? `<span class="ot">Check-in opens ${esc(this._dayTime(o.checkin_opens_at))}</span>` : '<span class="ot good">Check-in open</span>');
+      if (o.terminal) tags.push(`<span class="ot">Terminal ${esc(o.terminal)}</span>`);
+      if (o.gate) tags.push(`<span class="ot warn">Gate ${esc(o.gate)}</span>`);
+      if (o.seat) tags.push(`<span class="ot">Seat ${esc(o.seat)}</span>`);
+      if (o.reference) tags.push(`<span class="ot">${esc(o.reference)}</span>`);
+    } else if (kind === 'returns') {
+      sub = [o.shop, o.return_by && !['sent', 'received', 'refunded', 'rejected'].includes(o.status) ? `Send back by ${this._isoDay(o.return_by)}` : '', money(o.refund_amount, o.currency)].filter(Boolean).join(' · ');
+      if (o.return_by && ['started', 'label_ready'].includes(o.status)) { const d = this._daysTo(o.return_by); if (d <= 3) tags.push(`<span class="ot bad">${d < 0 ? 'Return window closed' : d === 0 ? 'Last day today' : `${d} day${d === 1 ? '' : 's'} left to send back`}</span>`); }
+      if (o.method) tags.push(`<span class="ot">${esc({ drop_off: 'Drop off', collection: 'Collection', post: 'Post' }[o.method] || o.method)}</span>`);
+    } else if (kind === 'renewals') {
+      sub = [o.provider, o.renews ? `Renews ${this._isoDay(o.renews)}` : '', money(o.price, o.currency)].filter(Boolean).join(' · ');
+      if (!this._findDone(kind, o) && o.renews) { const d = this._daysTo(o.renews); pill = [d < 0 ? 'Past' : d === 0 ? 'Today' : `In ${d} day${d === 1 ? '' : 's'}`, d <= 30 ? 'var(--ce-orange)' : 'var(--ce-text2)']; }
+      if (o.price && o.previous_price) { const up = Math.round((o.price / o.previous_price - 1) * 100); if (up) tags.push(`<span class="ot ${up > 0 ? 'bad' : 'good'}">${up > 0 ? '+' : ''}${up}% on last time (${esc(money(o.previous_price, o.currency))})</span>`); }
+      if (o.auto_renew != null) tags.push(`<span class="ot">${o.auto_renew ? 'Renews automatically' : 'Won’t renew by itself'}</span>`);
+    } else if (kind === 'visits') {
+      sub = [o.start_at ? `${this._dayTime(o.start_at)}${o.end_at ? `–${t(o.end_at)}` : ''}` : '', o.company].filter(Boolean).join(' · ');
+      if (o.start_at && o.start_at <= Date.now() && Date.now() <= (o.end_at || o.start_at + 4 * 3600000) && !this._findDone(kind, o)) tags.push('<span class="ot warn">Due now</span>');
+    } else if (kind === 'tickets') {
+      sub = [this._dayTime(o.start_at), o.venue].filter(Boolean).join(' · ');
+      if (o.doors_at) tags.push(`<span class="ot">Doors ${esc(t(o.doors_at))}</span>`);
+      if (o.seats) tags.push(`<span class="ot">${esc(o.seats)}</span>`);
+      if (o.quantity) tags.push(`<span class="ot">${o.quantity} ticket${o.quantity === 1 ? '' : 's'}</span>`);
+    } else if (kind === 'council') {
+      sub = [o.organisation, o.date ? this._isoDay(o.date) : ''].filter(Boolean).join(' · ');
+      pill = [COUNCIL_TOPIC[o.topic] || 'Local', o.topic === 'bins' ? 'var(--ce-green)' : 'var(--ce-text2)'];
+      if (o.action_by) { const d = this._daysTo(o.action_by); tags.push(`<span class="ot ${d <= 3 ? 'bad' : 'warn'}">Reply by ${esc(this._isoDay(o.action_by))}</span>`); }
+      detail = o.detail || '';
+    } else if (kind === 'receipts') {
+      sub = [o.shop, o.purchased ? this._isoDay(o.purchased) : '', money(o.price, o.currency)].filter(Boolean).join(' · ');
+      if (o.warranty_until) {
+        const d = this._daysTo(o.warranty_until);
+        tags.push(d < 0 ? '<span class="ot">Warranty ended</span>' : d <= 90 ? `<span class="ot warn">Warranty ends in ${d} day${d === 1 ? '' : 's'}</span>`
+          : `<span class="ot good">Warranty until ${esc(new Date(`${o.warranty_until}T12:00`).toLocaleDateString(locale(this._hass), { day: 'numeric', month: 'short', year: 'numeric' }))}</span>`);
+      }
+      if (o.reference) tags.push(`<span class="ot">${esc(o.reference)}</span>`);
+    }
+    return [this._findTitle(kind, o), sub, pill, tags, detail];
+  },
+  // travel bookings grouped into trips (as in the integration): ones less than two days apart go together
+  _trips(list) {
+    const segs = list.filter(s => s.start_at).sort((a, b) => a.start_at - b.start_at);
+    const out = [];
+    for (const s of segs) {
+      const end = s.end_at || s.start_at, t = out[out.length - 1];
+      if (t && s.start_at - t.end <= 2 * 86400000) { t.end = Math.max(t.end, end); t.items.push(s); } else out.push({ start: s.start_at, end, items: [s] });
+    }
+    out.forEach(t => { t.name = t.items.find(x => x.trip)?.trip || t.items.find(x => x.type !== 'hotel' && x.to)?.to || t.items.find(x => x.type === 'hotel')?.to || this._findTitle('travel', t.items[0]); });
+    const undated = list.filter(s => !s.start_at);
+    if (undated.length) out.push({ start: 9e15, end: 9e15, items: undated, name: 'Dates to Come' });
+    return out;
+  },
+  async _openFindEmail(kind, o) {
+    const slow = setTimeout(() => this._toast('Finding the email…'), 600);
+    try {
+      const at = await ceQuick(this._call('finds/locate', { account: o.account, kind, item: o.id }), 20000, { folder: o.folder || 'INBOX', uid: o.uid });
+      clearTimeout(slow); this._root.querySelector('.toast')?.remove();
+      this._nav('reader', { account: o.account, folder: at.folder, uid: at.uid });
+    } catch (err) { clearTimeout(slow); this._toast(err?.message || 'Couldn’t find the email.'); }
+  },
+  async _addFindFrom(kind, it) {
+    this._toast('Reading the email…');
+    try {
+      this._s.finds = { ...(this._s.finds || {}), [kind]: await this._call('finds/add', { account: it.account, folder: it.folder, uid: it.uid, kind }) };
+      this._refresh(`finds_${kind}`);
+      this._toast(`Added to ${FIND_KIND[kind].title}`, () => this._nav('finds', { kind }), 'Show');
+    } catch (err) { this._err(err); }
+  },
+  _findMenuItems() { return FIND_ORDER.filter(k => this._s.ai?.[k]).map(k => ({ text: FIND_KIND[k].title, value: `addfind:${k}`, icon: FIND_KIND[k].icon })); },
+
+  _pg_finds({ kind }) {
+    const K = FIND_KIND[kind];
+    const el = this._simplePage(K.title, `${kind === 'receipts' ? '<div class="fd-search"><input type="search" placeholder="Search receipts" aria-label="Search receipts"></div>' : ''}<div class="pc-body"></div>`);
+    this._scrollTitle(el);
+    const body = el.querySelector('.pc-body');
+    let q = '';
+    const row = (o) => {
+      const [title, sub, pill, tags, detail] = this._findRow(kind, o);
+      return `<div class="pc-row${o.status === 'cancelled' ? ' cancelled' : ''}" role="button" data-f="${esc(o.id)}" style="--c:${pill ? pill[1] : 'var(--ce-text2)'}"><span class="pc-ic" style="background:${K.color}">${ICON[K.icon]}</span>
+        <div class="pc-main"><div class="pc-l1"><b>${esc(title)}</b>${pill ? `<span class="pc-st">${esc(pill[0])}</span>` : ''}</div>${sub ? `<span>${esc(sub)}</span>` : ''}${detail ? `<span class="fd-detail">${esc(detail)}</span>` : ''}
+        ${tags.length ? `<div class="ord-tags">${tags.join('')}</div>` : ''}</div>
+        <button class="pc-more" data-fm="${esc(o.id)}" aria-label="More">${ICON.more}</button></div>`;
+    };
+    const group = (head, items, first) => (items.length ? `<div class="sh"${first ? '' : ' style="margin-top:20px"'}>${head}</div><div class="sgroup">${items.map(row).join('')}</div>` : '');
+    const draw = () => {
+      let list = this._finds(kind);
+      if (q) { const w = q.toLowerCase(); list = list.filter(o => [o.item, o.shop, o.reference, o.subject].some(v => String(v || '').toLowerCase().includes(w))); }
+      const activeIds = new Set(this._findActive(kind).map(o => o.id));
+      const act = list.filter(o => activeIds.has(o.id)), done = list.filter(o => !activeIds.has(o.id));
+      let html = '';
+      if (!this._finds(kind).length) html = `<div class="empty"><b>No ${esc(K.title)}</b>${this._s.ai?.[kind] ? K.empty : 'This is turned off. An administrator can turn it on in the card editor.'}</div>`;
+      else if (!list.length) html = '<div class="empty"><b>No Results</b>Nothing matched your search.</div>';
+      else {
+        const sections = [];
+        if (kind === 'travel') {
+          this._trips(act).forEach(t => sections.push([`${esc(t.name)}${t.start < 9e15 ? ` · ${esc(this._orderDay(t.start))}${t.end - t.start > 86400000 ? ` to ${esc(this._orderDay(t.end))}` : ''}` : ''}`, t.items]));
+          sections.push(['Earlier', done]);
+        } else if (kind === 'receipts') {
+          const soon = act.filter(o => o.warranty_until && this._daysTo(o.warranty_until) >= 0 && this._daysTo(o.warranty_until) <= 90);
+          sections.push(['Warranty Ending Soon', soon], ['Receipts', list.filter(o => !soon.includes(o)).sort((a, b) => (b.purchased_at || b.added) - (a.purchased_at || a.added))]);
+        } else {
+          sections.push([{ returns: 'To Send Back and Refunds to Come', renewals: 'Coming Up', visits: 'Coming Up', tickets: 'Coming Up', council: 'Current' }[kind], act],
+            [{ returns: 'Done', renewals: 'Sorted', visits: 'Earlier', tickets: 'Earlier', council: 'Earlier' }[kind], done]);
+        }
+        let first = true;
+        sections.forEach(([h, items]) => { if (items.length) { html += group(h, items, first); first = false; } });
+        html += `<div class="sfoot">${K.foot}</div>`;
+      }
+      body.innerHTML = html;
+    };
+    el.querySelector('.fd-search input')?.addEventListener('input', (e) => { q = e.target.value.trim(); draw(); });
+    const menuItems = (o) => {
+      const done = this._findDone(kind, o), items = [{ header: this._findTitle(kind, o) }];
+      items.push({ text: kind === 'tickets' ? 'Show Ticket' : kind === 'receipts' ? 'Show Receipt' : 'Show Email', value: 'email', icon: kind === 'tickets' ? 'ticket' : 'mail' });
+      const cal = { travel: o.start, visits: o.start, tickets: o.start, renewals: o.renews, returns: o.return_by, council: o.action_by || o.date }[kind];
+      if (cal && !done) items.push({ text: 'Add to Calendar', value: 'calendar', icon: 'calendar' });
+      if (o.reference) items.push({ text: 'Copy Reference', value: 'copy', icon: 'copy' });
+      const set = (s, text, icon) => (o.status !== s ? [{ text, value: `status:${s}`, icon }] : []);
+      const extra = {
+        returns: [...set('sent', 'Mark as Sent', 'check'), ...set('refunded', 'Mark as Refunded', 'check'), ...(done ? set('started', 'Not Done Yet', 'undo') : [])],
+        renewals: done ? set('upcoming', 'Not Sorted Yet', 'undo') : [...set('renewed', 'Mark as Renewed', 'check'), ...set('cancelled', 'Mark as Cancelled', 'x')],
+        visits: done ? set('booked', 'Not Done Yet', 'undo') : set('done', 'Mark as Done', 'check'),
+      }[kind] || [];
+      if (extra.length) items.push({ sep: true }, ...extra);
+      items.push({ sep: true }, { text: 'Delete', value: 'delete', icon: 'trash', red: true });
+      return items;
+    };
+    const act = async (o, v) => {
+      if (!o || !v) return;
+      if (v === 'email') { this._openFindEmail(kind, o); return; }
+      if (v === 'copy') { this._toast(await copyText(o.reference) ? 'Copied' : 'Copy not available here'); return; }
+      if (v === 'calendar') {
+        const title = { travel: o.title, visits: `${o.what}${o.company ? ` (${o.company})` : ''}`, tickets: o.event, renewals: `${o.what} renews`, returns: `Send back ${o.item}`, council: o.title }[kind];
+        const start = { travel: o.start, visits: o.start, tickets: o.start, renewals: o.renews, returns: o.return_by, council: o.action_by || o.date }[kind];
+        const end = { travel: o.end, visits: o.end, tickets: '' }[kind] || '';
+        this._addFound({ kind: 'event', title, start, end, location: kind === 'tickets' ? (o.venue || '') : kind === 'travel' ? (o.from || '') : '' });
+        return;
+      }
+      try {
+        const payload = { account: o.account, kind, item: o.id, action: v === 'delete' ? 'remove' : 'status', status: v.startsWith('status:') ? v.slice(7) : '' };
+        this._s.finds = { ...(this._s.finds || {}), [kind]: await this._call('finds/action', payload) };
+        this._refresh(`finds_${kind}`);
+        if (v === 'delete') {
+          this._toast('Deleted', async () => {
+            try { this._s.finds = { ...(this._s.finds || {}), [kind]: await this._call('finds/action', { account: o.account, kind, item: o.id, action: 'restore' }) }; this._refresh(`finds_${kind}`); } catch (err) { this._err(err); }
+          });
+        }
+      } catch (err) { this._err(err); }
+    };
+    const byId = (id) => this._finds(kind).find(o => o.id === id);
+    el.addEventListener('click', async (e) => {
+      if (e.target.closest('[data-a="back"]')) { this._back(); return; }
+      const r = e.target.closest('[data-fm],[data-f]');
+      if (!r) return;
+      const o = byId(r.dataset.fm || r.dataset.f);
+      if (o) act(o, await this._menu(r, menuItems(o)));
+    });
+    el.addEventListener('contextmenu', async (e) => {
+      const r = e.target.closest('[data-f]');
+      if (!r) return;
+      e.preventDefault();
+      const o = byId(r.dataset.f);
+      if (o) act(o, await this._menu(r, menuItems(o)));
+    });
+    draw();
+    const timer = setInterval(() => { if (el.isConnected) draw(); else clearInterval(timer); }, 60000);
+    return { el, refresh: (what) => { if (['all', `finds_${kind}`, 'settings', 'back'].includes(what)) draw(); } };
+  },
+
+  // ── sign-in codes: the latest one at the top of the Inbox, with Copy, for 10 minutes ──
+  _codesStrip() {
+    if (this._config.show_codes === false) return '';
+    const c = (this._s.codes || []).find(x => x.until > Date.now());
+    if (!c) return '';
+    const mins = Math.max(1, Math.ceil((c.until - Date.now()) / 60000));
+    return `<div class="code-strip" data-code="${esc(c.id)}"><span class="pc-ic">${ICON.key}</span>
+      <div class="cs-main"><div class="cs-code">${esc(c.code)}</div><span class="cs-sub">Sign-in code${c.from ? ` from ${esc(c.from)}` : ''} · ${mins} min left</span></div>
+      <button class="cs-copy" data-cs="copy">Copy</button><button class="cs-x" data-cs="done" aria-label="Dismiss">${ICON.x}</button></div>`;
+  },
+  async _codesClick(e) {
+    const b = e.target.closest('[data-cs]'), strip = e.target.closest('[data-code]');
+    if (!strip) return;
+    const c = (this._s.codes || []).find(x => x.id === strip.dataset.code);
+    if (!c) return;
+    if (!b) { this._nav('reader', { account: c.account, folder: 'INBOX', uid: c.uid }); return; }
+    if (b.dataset.cs === 'copy') { this._toast(await copyText(c.code.replace(/[ -]/g, '')) ? 'Code copied' : 'Copy not available here'); return; }
+    try { this._s.codes = await this._call('codes/done', { id: c.id }); } catch (err) { this._s.codes = (this._s.codes || []).filter(x => x.id !== c.id); }
+    this._refresh('codes');
+  },
+  _codesTick() {
+    clearTimeout(this._codesTimer);
+    if (!(this._s.codes || []).some(x => x.until > Date.now())) return;
+    this._codesTimer = setTimeout(() => { this._refresh('codes'); this._codesTick(); }, 30000);
+  },
+});
+
 const defineCrowEmail = () => {
   [['crow-email-card', CrowEmailCard], ['crow-email-card-editor', CrowEmailCardEditor]].forEach(([name, cls]) => {
     const reg = window.customElements;
