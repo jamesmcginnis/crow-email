@@ -31,6 +31,9 @@ Everything is **private to each person** — no cloud service of its own.
 - **Rich Writing** — formatting, attachments, signatures, voting buttons, invitations and contact cards
 - **Inbox Tools** — Snooze, Mute Conversation, the Screener, Subscriptions, Sweep, Custom Swipes, Today and keyboard shortcuts (each off until switched on)
 - **Parcels** — tracking numbers found in delivery emails, with an Arriving Today section
+- **Food Orders and Supermarket Deliveries** — takeaways with when they should arrive, and supermarket slots with substitutions and missing items, each in a mailbox of its own
+- **Travel, Home Visits, Tickets, Returns and Refunds, Renewals, Council and Local, and Receipts** — each in a mailbox of its own, with sensors for automations
+- **Sign-in Codes** — the latest code at the top of the Inbox with Copy, for 10 minutes
 - **Add to Calendar** — tap a date in an email
 - **Skins** — iPhone, Airmail, Gmail, Outlook, Spark, Superhuman, Proton Mail and old-school Outlook Express, Hotmail 2000, You've Got Mail, Terminal, iPhone OS 3, BlackBerry and Mac OS 9
 - **Group by Type** — optional: the Inbox in sections, like Spark
@@ -46,7 +49,7 @@ All optional, and each can be switched off individually:
 - **Smart Replies, Writing Tools and Tone Check**
 - **Translate, Describe Pictures and Smart Search**
 - **Smart Notifications and Smart Categories**
-- **Parcel Tracker, Appointments and Bills**
+- **Parcel Tracker, Food Orders, Supermarket Deliveries, Appointments and Bills**
 - **Morning Briefing** — a summary of your day, as a notification or read aloud
 - **Smart Snooze, Screener Insights, Subscription Notes and Inbox Tidy-Up**
 - **Contacts from Signatures, Follow-Up Nudges and Write the Follow-Up**
@@ -57,9 +60,9 @@ All optional, and each can be switched off individually:
 - **Phone Notifications** — through the Companion app, with Reply, Mark as Read, Archive and more
 - **Quiet Hours, Rules and the App Icon Badge**
 - **Email Home Assistant** — email yourself `HA:` questions and Assist answers
-- **Sensors** — unread, VIP, latest email, today, flagged, drafts, junk, parcels, needs attention today, bills due and more, for every account
+- **Sensors** — unread (in total and for each Inbox group), VIP, latest email, today, flagged, drafts, junk, parcels, out for delivery, food orders, supermarket deliveries, monthly spend, travel, away on a trip, home visits, events, refunds, renewals, council updates, warranties, bills due and overdue, snoozed, reminders, waiting for a reply, the Screener, subscriptions and more, for every account
 - **Actions** — `crow_email.send_email`, `mark_as_read`, `archive`, `move_to_folder`, `flag`, `refresh` and `update_badge`
-- **Events** — `crow_email_received`, `crow_email_sent`, `crow_email_details`, `crow_email_parcel`, `crow_email_action`, `crow_email_vote` and more
+- **Events** — `crow_email_received`, `crow_email_sent`, `crow_email_details`, `crow_email_parcel`, `crow_email_food`, `crow_email_grocery`, `crow_email_travel`, `crow_email_visit`, `crow_email_council`, `crow_email_action`, `crow_email_vote` and more
 
 ## Installation
 

@@ -139,13 +139,24 @@ Each one is off until it's switched on in the editor:
 - **Subscriptions** — every mailing list in your Inbox, busiest first, with one-tap Unsubscribe where the sender supports it and **Unsubscribe All** for the ones you never read
 - **Sweep** — delete or archive everything from one sender, keep only the latest, or delete ones over 10 days old
 - **Custom Swipes** — each person chooses the buttons a swipe shows, and what a long swipe does
-- **Today** — a panel at the top of the Mailboxes with parcels arriving, appointments, bills due, reminders, snoozed emails coming back and follow-ups
+- **Today** — a panel at the top of the Mailboxes with parcels arriving, food orders, supermarket delivery slots, appointments, bills due, reminders, snoozed emails coming back and follow-ups
 - **Keyboard shortcuts** — on a tablet or computer: `j`/`k` to move, `e` archive, `#` delete, `r` reply, `c` new email, `/` search, `?` for the full list
 
 ### Parcels and Dates
 
 - **Track Parcel** — tracking numbers are found in delivery emails from couriers in the UK, Ireland, the US, Canada, Australia and New Zealand, with a link to the courier's own tracking page (no API keys)
 - **Parcels** — a mailbox of deliveries on their way, with swipes, Rename, Share and Add to Calendar, an Arriving Today section, and a countdown before delivered parcels are tidied away
+- **Food Orders** — takeaway and restaurant orders (Just Eat, Deliveroo, Uber Eats, Foodhub and others) in a mailbox of their own, with when each should arrive or be ready to collect. An order counts as delivered an hour after it was due if no email says otherwise, and leaves a few hours later
+- **Supermarket Deliveries** — supermarket deliveries and click and collect (Tesco, Sainsbury's, Asda, Ocado and others) in a mailbox of their own, with the slot, the last time the order can be changed, substitutions and missing items. A delivery counts as delivered two hours after its slot if no email says otherwise, and stays two days so the substitutions can be checked
+- **Travel** — flights, trains, ferries, coaches, hotels and car hire grouped into trips, with check-in times, terminals, seats, delays and gate changes
+- **Home Visits** — engineers, services, installs and big deliveries coming to your home, with their time window
+- **Tickets** — concerts, matches, shows and the cinema, with doors, seats and Show Ticket
+- **Returns and Refunds** — things you're sending back, with the last day to return them and the refund to come
+- **Renewals** — insurance, MOT, TV licence, contracts and memberships, with the renewal date and last year's price to compare
+- **Council and Local** — bin collection changes, council tax, school news, road works and consultations, with any deadline
+- **Receipts** — receipts for things worth keeping, with warranties and a search
+- **Sign-in Codes** — the latest sign-in or verification code from a new email at the top of the Inbox, with Copy, for 10 minutes (found without AI, never saved, and never in sensors or events)
+- **Add to…** — in an email's menu, adds an older email (or one that went into Parcels) to Food Orders, Supermarket Deliveries or any of the sections above
 - **Add to Calendar** — tap a date in an email (optional, off by default) to add it to the calendar each person chooses, with the time, place and notes filled in
 
 ### Look and Feel
@@ -180,6 +191,8 @@ All optional, and each can be switched off individually in the editor:
 - **Smart Notifications** — only email worth a notification
 - **Smart Categories** — Primary, Transactions, Updates and Promotions
 - **Parcel Tracker** — deliveries found in email, with a Parcels sensor
+- **Food Orders and Supermarket Deliveries** — found in email, each with its own mailbox, sensors and event. Parcels leaves them out while these are on
+- **Travel, Home Visits, Tickets, Returns and Refunds, Renewals, Council and Local, and Receipts** — found in email, each with its own mailbox, sensors and event
 - **Appointments** — bookings found in new email, with Add to Calendar
 - **Bills** — amounts and due dates, a reminder a few days before, and a warning when a bill is much higher than last time
 - **Morning Briefing** — a short summary of your day each morning, as a notification or read aloud on a speaker
@@ -215,7 +228,9 @@ Each account is a device with these entities:
 |--------|-------------|
 | Unread | Unread emails in the Inbox |
 | Unread VIP | Unread emails from VIPs |
+| Unread people, notifications, council and local, shopping, social and newsletters | Unread emails in each of the Inbox's groups, sorted the same way as the card (an email added to Council and Local counts there) |
 | Latest email | Who the newest email is from, and its subject |
+| Latest VIP email | Who the newest email from a VIP is from, and its subject |
 | Received today | Emails received today |
 | Flagged | Flagged emails |
 | Drafts and scheduled | Drafts, plus emails waiting to Send Later |
@@ -225,9 +240,36 @@ Each account is a device with these entities:
 | Parcels | Deliveries on their way (with the Parcel Tracker) |
 | Needs attention today | Parcels arriving, appointments, bills due, reminders, snoozed emails and follow-ups |
 | Bills due this week | Unpaid bills due in the next 7 days, with the total (with Bills) |
+| Next bill | The due date of the next unpaid bill, with who it's to and how much (with Bills) |
+| Snoozed | Snoozed emails, and when the next one comes back |
+| Reminders | Emails with a Remind Me set, and when the next one is due |
+| Waiting for a reply | Emails you sent that haven't had a reply (with Follow-Up Nudges) |
+| Screener | Emails from first-time senders waiting for a Yes or No, and who sent them (with the Screener on) |
+| Subscriptions | Mailing lists in the Inbox you're still subscribed to, counted every 6 hours |
+| Food arriving | When the next food order should arrive or be ready, with the restaurant, status and total (with Food Orders) |
+| Food order spend this month | What food orders found in email have cost this month, in Home Assistant's currency, with last month's total (with Food Orders) |
+| Next supermarket delivery | The start of the next delivery or collection slot, with the shop, the end of the slot, the last time to change the order, substitutions and missing items (with Supermarket Deliveries) |
+| Supermarket spend this month | What supermarket orders found in email have cost this month, with last month's total (with Supermarket Deliveries) |
+| Next travel | When the next booking starts, with the flight or train, from and to, terminal, gate, seat, delay, check-in time and the trip (with Travel) |
+| Next home visit | The start of the next visit's window, with what it is, the company and the end of the window (with Home Visits) |
+| Next event | When the next event starts, with the venue, doors, seats and number of tickets (with Tickets) |
+| Refunds owed | Refunds still to come, in Home Assistant's currency, with each return (with Returns and Refunds) |
+| Return deadline | The last day to send back the next thing that hasn't been sent, with the days left (with Returns and Refunds) |
+| Next renewal | The next renewal or expiry date, with the price, last year's price and the change (with Renewals) |
+| Council updates | Current news from the council, school or local services, with the next bin collection change (with Council and Local) |
+| Warranties ending soon | Warranties ending in the next 90 days (with Receipts) |
 | Badge | The number on the app icon (with the App Icon Badge) |
 | Connected | On while Home Assistant is signed in to the mail server |
 | New mail | On when unread email has arrived since the Inbox was last looked at |
+| Parcel out for delivery | On while a parcel is out for delivery (with the Parcel Tracker) |
+| Food order in progress | On from ordering until the food is delivered or collected, with whether it's on its way or ready to collect (with Food Orders) |
+| Supermarket delivery coming | On while a supermarket delivery is on its way, ready to collect, or during its slot (with Supermarket Deliveries) |
+| Away on a trip | On from the start of a trip to its end (a trip with somewhere to stay, more than one booking, or over 12 hours), with when you're back (with Travel) |
+| Travel disruption | On while a booking in the next two days is delayed, changed or cancelled (with Travel) |
+| Renewal due soon | On while something renews or runs out in the next 30 days (with Renewals) |
+| Home visit today | On all day when an engineer, service or delivery is due (with Home Visits) |
+| Home visit now | On during a visit's time window, or for four hours from its start when no end is given (with Home Visits) |
+| Bill overdue | On while a bill is past its due date and not marked paid (with Bills) |
 
 > Each account's **Show Sender and Subject** and **Show Preview Text** settings decide whether those details appear in its sensors and events, since anyone who can see your Home Assistant can see them.
 
@@ -257,6 +299,9 @@ Each account is a device with these entities:
 | `crow_email_details` | What the AI found in a new email: its kind, amount, due date, appointment time, location and reference (with Email Details for Automations) |
 | `crow_email_follow_up` | An email you sent may need a follow-up |
 | `crow_email_parcel` | A parcel was added, changed status or was removed |
+| `crow_email_food` | A food order was added, changed status (including probably delivered) or was removed |
+| `crow_email_grocery` | A supermarket delivery was added, changed status (including probably delivered) or was removed, with how many substitutions and missing items |
+| `crow_email_travel`, `crow_email_visit`, `crow_email_ticket`, `crow_email_return`, `crow_email_renewal`, `crow_email_council`, `crow_email_receipt` | Something was added, changed or removed in that section. `change` says which (`added`, `changed` for a new status, `updated` or `removed`); `crow_email_council` has a `topic`, such as `bins` |
 | `crow_email_blocked` | Email from a blocked sender was moved to Junk |
 | `crow_email_action` | Someone tapped a button in an email sent by an automation |
 | `crow_email_vote` | Someone voted on an email with voting buttons |
